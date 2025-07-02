@@ -4,7 +4,7 @@ import requests
 st.set_page_config(page_title="Questionnaire Assistant", page_icon="💬", layout="wide")
 st.title("💬 Questionnaire Assistant Demo")
 
-API_BASE = "http://localhost:8000"
+API_BASE = "https://ragtool-backend.onrender.com"
 
 tab1, tab2 = st.tabs(["🔍 Chat & Ask", "📄 Upload Questionnaire"])
 
@@ -94,7 +94,7 @@ with st.sidebar:
     if st.button("🔄 Sync Knowledge Base"):
         with st.spinner("Syncing from solved questionnaires and F24 HelpDocs..."):
             try:
-                res = requests.post("http://localhost:8000/sync-knowledge")
+                res = requests.post(f"{API_BASE}/sync-knowledge")
                 res.raise_for_status()
                 result = res.json()
 
