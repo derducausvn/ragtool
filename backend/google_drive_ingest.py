@@ -1,32 +1,20 @@
 import os
-import pickle
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
+import json
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# If modifying scopes, delete token.pickle to re-authenticate
+# Use readonly scope or add write if you want to upload files
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
-# Compute absolute path to your credentials JSON in the project root
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CREDENTIALS_PATH = os.path.join(BASE_DIR, 'googlecloudcred.json')
+# Either read JSON from env var or from file path here:
+GOOGLE_CLOUD_CREDENTIALS = os.getenv("GOOGLE_CLOUD_CREDENTIALS")
 
 def authenticate():
-    creds = None
-    if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
-            creds = pickle.load(token)
+    if not GOOGLE_CLOUD_CREDENTIALS:
+        raise RuntimeError("Missing GOOGLE_CLOUD_CREDENTIALS environment variable")
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-            creds = flow.run_local_server(port=8080)
-
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
-
+    info = json.loads(GOOGLE_CLOUD_CREDENTIALS)
+    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
     return creds
 
 def list_files(service, folder_id=None):
@@ -48,11 +36,8 @@ def main():
     creds = authenticate()
     service = build('drive', 'v3', credentials=creds)
 
-    # To list all files in root folder:
+    # List files in root folder
     list_files(service)
-
-    # Or specify folder ID to list files inside a folder:
-    # list_files(service, folder_id="your-folder-id")
 
 if __name__ == '__main__':
     main()
