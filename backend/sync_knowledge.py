@@ -20,7 +20,7 @@ HELP_SITES = [
 ]
 
 DROPBOX_FOLDER = "/ragtool_knowledgesource"
-MAX_WEB_PAGES = 50
+MAX_WEB_PAGES = 10
 PROCESSED_TRACK_FILE = 'processed_items.txt'
 
 
