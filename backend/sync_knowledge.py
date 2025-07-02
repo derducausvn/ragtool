@@ -7,9 +7,9 @@ from urllib.parse import urljoin, urlparse
 from langchain_community.document_loaders import WebBaseLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-from .parser import parse_file
-from .embedding import embed_documents
-from .dropbox_api import list_dropbox_files, download_dropbox_file
+from parser import parse_file
+from embedding import embed_documents
+from dropbox_api import list_dropbox_files, download_dropbox_file
 
 TEMP_DOWNLOAD_DIR = 'temp_downloads'
 os.makedirs(TEMP_DOWNLOAD_DIR, exist_ok=True)
