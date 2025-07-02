@@ -92,6 +92,8 @@ def sync_knowledge():
 
     try:
         service = build('drive', 'v3', credentials=creds)
+
+        folder_id = "1WrjPQMDOY59-0bH57GTvS54VxZE9X12E"
         results = service.files().list(
             pageSize=100,
             fields="files(id, name, mimeType, modifiedTime)"
