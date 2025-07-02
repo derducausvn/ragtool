@@ -108,14 +108,13 @@ Answer:
 
     fallback_phrases = [
         "i'm sorry", "no relevant context", "cannot find", "don't know",
-        "no information", "unable to answer", "does not include information", "i don't", "does not",
+        "no information", "unable to answer", "does not include information", "i don't", "does not", "do not", "no data"
     ]
     is_fallback = any(phrase in answer.lower() for phrase in fallback_phrases)
 
     if is_fallback or confidence_score < 0.3:
         return {
             "answer": answer,
-            "confidence_score": 0.0,
             "sources": []
         }
 
