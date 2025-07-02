@@ -83,8 +83,11 @@ Answer:
     # Prompt with retrieval
     prompt = PromptTemplate.from_template("""
 You are a helpful assistant trained to answer customer questionnaires for F24.  
-Always use the provided context when possible. If not found, respond based on general knowledge.  
-In most cases, 'you' refers to F24.
+You understand both general and specific questions, even if they are informal or vague.  
+Always try your best to help using the available context.  
+If very little or no relevant context is found, politely respond based on your general understanding, or politely decline to answer to advoid hallucinating.
+In most cases, 'you' refers to F24, as the questions are coming from F24's customers.
+Questions can be in different languages besides English, so respond correspondingly.
 
 Context: {context}
 Question: {question}
