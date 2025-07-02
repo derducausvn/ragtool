@@ -26,3 +26,4 @@ faiss-cpu
 scikit-learn
 pandas
 
+openpyxl
