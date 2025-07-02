@@ -6,6 +6,7 @@ SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 def authenticate():
     creds_json = os.getenv("GOOGLE_CLOUD_CREDENTIALS")
+    print(f"DEBUG: creds_json={creds_json}")  # Add this line to log what is read
     if not creds_json:
         raise RuntimeError("Missing GOOGLE_CLOUD_CREDENTIALS environment variable")
 
