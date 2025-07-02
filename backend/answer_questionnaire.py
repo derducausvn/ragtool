@@ -5,8 +5,8 @@ from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from langchain.schema import Document
-from generate import generate_answer
-from parser import parse_file
+from .generate import generate_answer
+from .parser import parse_file
 
 router = APIRouter()
 

@@ -3,9 +3,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from generate import generate_answer
-from sync_knowledge import sync_knowledge
-from answer_questionnaire import router as answer_router
+from .generate import generate_answer
+from .sync_knowledge import sync_knowledge
+from .answer_questionnaire import router as answer_router
 
 # Load local .env variables (only used locally)
 load_dotenv()

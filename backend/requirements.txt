@@ -1,18 +1,28 @@
+# Core framework
 fastapi
 uvicorn
+
+# Parsing, HTTP, async
 pydantic
 python-multipart
+requests
+bs4
+
+# Dropbox integration
+dropbox
+
+# Environment variables
+python-dotenv
+
+# OpenAI & LangChain
 openai
 langchain
 langchain-openai
 langchain-community
 langchain-unstructured
+
+# Embedding / ML
 faiss-cpu
 scikit-learn
-bs4
-requests
-python-dotenv
-google-api-python-client
-google-auth
-google-auth-oauthlib
 pandas
+
