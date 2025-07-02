@@ -16,37 +16,20 @@ def embed_documents(docs: List[Document], batch_size: int = 100) -> int:
         print("[embedding] No documents to embed.")
         return 0
 
-    # Filter out long docs
-    long_docs = [doc for doc in docs if len(doc.page_content) > MAX_CHARS]
+    # Filter out overly long docs
     docs = [doc for doc in docs if len(doc.page_content) <= MAX_CHARS]
-
     if not docs:
-        print("[embedding] All documents too long — nothing to embed.")
+        print("[embedding] All documents were too long — nothing to embed.")
         return 0
-
-    if long_docs:
-        print(f"[embedding] Skipped {len(long_docs)} oversized docs:")
-        for doc in long_docs:
-            print(" -", doc.metadata.get("source", "unknown"))
-
-    for doc in docs:
-        doc.metadata["source"] = doc.metadata.get("source", "unknown")
 
     embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
 
-    # ⚠️ Safeguard: if still empty after all filtering
-    try:
-        first_doc = docs[0]
-    except IndexError:
-        print("[embedding] No documents left to embed after filtering.")
-        return 0
-
-    # Init or load FAISS index
     if os.path.exists(VECTOR_DB_PATH):
         db = FAISS.load_local(VECTOR_DB_PATH, embeddings, allow_dangerous_deserialization=True)
     else:
-        db = FAISS.from_documents([first_doc], embeddings)
-        db.delete([0])  # remove the init doc immediately
+        db = FAISS.from_documents(docs, embeddings)  # Initialize properly without deleting
+        db.save_local(VECTOR_DB_PATH)
+        return len(docs)
 
     for i in range(0, len(docs), batch_size):
         batch = docs[i:i + batch_size]
@@ -57,3 +40,4 @@ def embed_documents(docs: List[Document], batch_size: int = 100) -> int:
 
     db.save_local(VECTOR_DB_PATH)
     return len(docs)
+
