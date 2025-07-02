@@ -13,8 +13,8 @@ MAX_CHARS = 5000  # Limit long documents (~1000-1500 tokens)
 
 def embed_documents(docs: List[Document], batch_size: int = 100) -> int:
     if not docs:
-        print("No documents to embed.")
-        return 0
+        print("[embedding] No documents to embed.")
+        return 0  # ← this avoids the FAISS crash
 
     # Filter out overly long docs
     long_docs = [doc for doc in docs if len(doc.page_content) > MAX_CHARS]
