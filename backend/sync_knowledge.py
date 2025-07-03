@@ -96,15 +96,19 @@ def sync_knowledge():
     try:
         file_paths = list_dropbox_files(DROPBOX_FOLDER)
         print(f"[sync_knowledge] Found {len(file_paths)} files in Dropbox folder")
-
+    
         for path in file_paths:
-            identifier = hash_content(path)
-            if identifier in processed_ids:
-                print(f"[sync_knowledge] Skipping already processed: {path}")
-                continue
-
             try:
                 local_path = download_dropbox_file(path, save_dir=TEMP_DOWNLOAD_DIR)
+    
+                with open(local_path, 'rb') as f:
+                    content_hash = hashlib.md5(f.read()).hexdigest()
+                identifier = f"{path}:{content_hash}"
+    
+                if identifier in processed_ids:
+                    print(f"[sync_knowledge] Skipping already processed: {path}")
+                    continue
+    
                 docs = parse_file(local_path)
                 for doc in docs:
                     doc.metadata["source"] = path
