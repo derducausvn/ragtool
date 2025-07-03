@@ -27,7 +27,7 @@ with tab1:
         st.chat_message("user").markdown(user_input)
         st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-        with st.spinner("Searching knowledge..." if mode == "F24 QA Expert" else "Thinking..."):
+        with st.spinner("Searching knowledge..." if mode == "F24 QA Expert" else "..."):
             try:
                 res = requests.post(f"{API_BASE}/generate", json={"question": user_input, "mode": mode})
                 res.raise_for_status()
