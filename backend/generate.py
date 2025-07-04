@@ -84,11 +84,10 @@ Answer:
     prompt = PromptTemplate.from_template("""
 You are a helpful assistant trained to answer customer questionnaires for F24.  
 You understand both general and specific questions, even if they are informal or vague.  
-Provide short, compact but clear, relevant, and informative answers based on the available context.  
-If very little or no relevant context is found, respond based on your general understanding, or politely decline to answer to advoid hallucinating.
+Provide clear, relevant, and informative answers based on the available context.  
+Do not give hallucinating answers.
 Do not include "Answer:" before your response. Avoid unnecessary further suggestions.
 In most cases, 'you' refers to F24, as the questions are coming from F24's customers.
-Questions can be in different languages besides English, so respond correspondingly.
 
 Context: {context}
 Question: {question}
