@@ -1,49 +1,82 @@
 import os
 import tempfile
-import pandas as pd
 from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from langchain.schema import Document
-from generate import generate_answer
-from parser import parse_file
+import logging
+
+from .generate import generate_answer
+from .parser import parse_file
 
 router = APIRouter()
 
+SUPPORTED_FORMATS = {"xlsx", "pdf", "docx"}
+
 @router.post("/answer-questionnaire")
 async def answer_questionnaire(file: UploadFile = File(...)):
-    try:
-        file_ext = file.filename.split(".")[-1].lower()
-        if file_ext not in ["xlsx", "pdf", "docx"]:
-            raise HTTPException(status_code=400, detail="Only .xlsx, .pdf, .docx files are supported")
+    """Process uploaded questionnaire file and generate answers"""
+    
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    # Validate file format
+    file_ext = file.filename.split(".")[-1].lower()
+    if file_ext not in SUPPORTED_FORMATS:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported file format. Supported formats: {', '.join(SUPPORTED_FORMATS)}"
+        )
 
-        # Save the uploaded file temporarily
+    temp_path = None
+    try:
+        # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as temp_file:
-            temp_file.write(await file.read())
+            content = await file.read()
+            temp_file.write(content)
             temp_path = temp_file.name
 
-        # Parse the document to get chunks (semantically meaningful blocks)
+        # Parse document into chunks
         chunks: List[Document] = parse_file(temp_path)
+        
+        if not chunks:
+            raise HTTPException(status_code=400, detail="No content could be extracted from the file")
 
-        # For each chunk, use it as a question or infer a question and answer it
+        # Process each chunk as a question
         results = []
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
             question = chunk.page_content.strip()
             if not question:
                 continue
-            answer_data = generate_answer(question)
+                
+            try:
+                answer_data = generate_answer(question)
+                results.append({
+                    "question": question,
+                    "answer": answer_data.get("answer", ""),
+                    "sources": answer_data.get("sources", [])
+                })
+            except Exception as e:
+                logging.error(f"Error processing question {i}: {e}")
+                results.append({
+                    "question": question,
+                    "answer": f"Error processing question: {str(e)}",
+                    "sources": []
+                })
 
-            results.append({
-                "question": question,
-                "answer": answer_data.get("answer", ""),
-                "confidence_score": answer_data.get("confidence_score"),
-                "sources": answer_data.get("sources", [])
-            })
-
-        # Clean up temp file
-        os.remove(temp_path)
-
+        logging.info(f"Processed {len(results)} questions from questionnaire")
         return JSONResponse(content={"questions_and_answers": results})
 
+    except HTTPException:
+        raise
     except Exception as e:
+        logging.error(f"Error processing questionnaire: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to process questionnaire: {str(e)}")
+    
+    finally:
+        # Clean up temporary file
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                logging.warning(f"Failed to clean up temp file: {e}")

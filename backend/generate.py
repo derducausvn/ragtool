@@ -1,138 +1,155 @@
 import os
 from dotenv import load_dotenv
-load_dotenv()
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from sklearn.metrics.pairwise import cosine_similarity
-from langchain.schema import SystemMessage, HumanMessage
-import numpy as np
-import requests
-from bs4 import BeautifulSoup
+import logging
+
+load_dotenv()
 
 VECTOR_DB_PATH = "vector_store"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# Cache for embeddings and LLM
+_embeddings = None
+_llm = None
 
-def fetch_web_snippets(query: str, num_results: int = 3) -> str:
+def get_embeddings():
+    global _embeddings
+    if _embeddings is None:
+        _embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
+    return _embeddings
+
+def get_llm():
+    global _llm
+    if _llm is None:
+        _llm = ChatOpenAI(model="gpt-3.5-turbo-1106", temperature=0.7, api_key=OPENAI_API_KEY)
+    return _llm
+
+def is_no_information_answer(answer: str) -> bool:
+    """
+    Use LLM to detect if answer indicates lack of knowledge - works for any language
+    """
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-        res = requests.get(search_url, headers=headers)
-        soup = BeautifulSoup(res.text, "html.parser")
-        snippets = []
-        for g in soup.select("div.VwiC3b")[:num_results]:
-            snippets.append(g.text)
-        return "\n".join(snippets)
-    except Exception as e:
-        print(f"[WebSearch] Failed: {e}")
-        return ""
+        llm = get_llm()
+        
+        prompt = f"""Analyze this answer and determine if it indicates the AI doesn't have relevant information.
 
+Answer: "{answer}"
+
+Does this answer indicate lack of knowledge or inability to provide useful information? Consider:
+- Apologizing for not knowing
+- Stating no information available  
+- Expressing inability to answer
+- Providing vague or unhelpful responses
+- Any language
+
+Respond with only: YES or NO"""
+
+        response = llm.invoke(prompt)
+        result = response.content.strip().upper() if hasattr(response, "content") else str(response).strip().upper()
+        
+        return result == "YES"
+        
+    except Exception as e:
+        logging.warning(f"LLM no-information detection failed: {e}")
+        return False  # If detection fails, assume information is available
+
+def extract_sources(docs: list) -> list:
+    """Extract and categorize sources from documents"""
+    sources = set()
+    for doc in docs:
+        src = doc.metadata.get("source")
+        if src:
+            if src.startswith("http"):
+                sources.add("F24 Websites & HelpDocs")
+            else:
+                sources.add("Knowledge Documents")
+        elif doc.metadata.get("row") is not None:
+            sources.add("Knowledge Documents")
+    return sorted(sources)
 
 def generate_answer(question: str, mode: str = "F24 QA Expert") -> dict:
+    """Generate answer based on mode and available knowledge"""
     if not OPENAI_API_KEY:
         return {
-            "answer": "OpenAI API key not found.",
-            "confidence_score": None,
+            "answer": "OpenAI API key not configured.",
             "sources": []
         }
 
-    llm = ChatOpenAI(model="gpt-3.5-turbo-1106", temperature=0.7, api_key=OPENAI_API_KEY)
+    llm = get_llm()
 
-    # --- MODE 1: General Chat with simulated browsing ---
+    # General Chat mode - simple conversational AI
     if mode == "General Chat":
-        web_snippets = fetch_web_snippets(question)
-        prompt = f"""You are a helpful and neutral AI assistant. Use the web info below to answer naturally.
+        try:
+            response = llm.invoke(question)
+            answer = response.content if hasattr(response, "content") else str(response)
+            return {
+                "answer": answer,
+                "sources": None
+            }
+        except Exception as e:
+            return {
+                "answer": f"Error generating answer: {str(e)}",
+                "sources": None
+            }
 
-Information from the web:
-{web_snippets}
-
-Question: {question}
-Answer:
-"""
-        response = llm.invoke(prompt)
-        answer = response.content if hasattr(response, "content") else str(response)
-
-        return {
-            "answer": answer,
-            "confidence_score": None,
-            "sources": []
-        }
-
-    # --- MODE 2: F24 QA Expert (with retrieval) ---
+    # F24 QA Expert mode with knowledge base
     if not os.path.exists(VECTOR_DB_PATH):
         return {
-            "answer": "Knowledge base is empty.",
-            "confidence_score": 0.0,
+            "answer": "Knowledge base is empty. Please sync knowledge first.",
             "sources": []
         }
 
-    embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
-    db = FAISS.load_local(VECTOR_DB_PATH, embeddings, allow_dangerous_deserialization=True)
-    retriever = db.as_retriever(search_kwargs={"k": 5})
-    docs = retriever.invoke(question)
+    try:
+        embeddings = get_embeddings()
+        db = FAISS.load_local(VECTOR_DB_PATH, embeddings, allow_dangerous_deserialization=True)
+        retriever = db.as_retriever(search_kwargs={"k": 5})
 
-    # Confidence score
-    question_vector = embeddings.embed_query(question)
-    doc_vectors = [embeddings.embed_query(doc.page_content) for doc in docs]
-    sims = cosine_similarity([question_vector], doc_vectors)[0]
-    top_sim_avg = float(np.mean(sorted(sims, reverse=True)[:3]))
-    confidence_score = round(top_sim_avg, 3)
-
-    # Prompt with retrieval
-    prompt = PromptTemplate.from_template("""
-You are an AI assistant supporting F24’s customer support team.  
-Your task is to answer questions from customer questionnaires clearly, concisely, and in a form that can be directly pasted into the customer’s document.  
-You always answer as if you are F24, using “we” or “our” when appropriate.  
+        # Create QA chain
+        prompt = PromptTemplate.from_template("""
+You are an AI assistant supporting F24's customer support team.  
+Your task is to answer questions from customer questionnaires clearly, concisely, and in a form that can be directly pasted into the customer's document.  
+You always answer as if you are F24, using "we" or "our" when appropriate.  
 - Use the provided knowledge base to form accurate answers.  
-- Respond factually and directly.
+- Respond factually and directly in the SAME LANGUAGE as the question.
 - Use appropriate tone and terminology for a professional business response.  
-- If little or no relevant information is found: say so clearly (e.g., “We currently do not have information available on this.”).  
+- If little or no relevant information is found: say so clearly in the same language as the question (e.g., for English: "We currently do not have information available on this.", for German: "Wir haben derzeit keine Informationen dazu verfügbar.", etc.).  
 - Avoid hallucinating or guessing.  
-- Never include “Answer:” before your response.  
+- Never include "Answer:" before your response.  
+- IMPORTANT: Always respond in the same language as the question.
 
 Context: {context}  
 Question: {question}
 """)
 
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=retriever,
-        chain_type="stuff",
-        chain_type_kwargs={"prompt": prompt},
-        return_source_documents=True
-    )
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            retriever=retriever,
+            chain_type="stuff",
+            chain_type_kwargs={"prompt": prompt},
+            return_source_documents=True
+        )
 
-    result = qa_chain.invoke({"query": question})
-    answer = result["result"]
-    sources = result.get("source_documents", [])
+        result = qa_chain.invoke({"query": question})
+        answer = result["result"]
+        source_docs = result.get("source_documents", [])
 
-    fallback_phrases = [
-        "i'm sorry", "no relevant context", "cannot find", "don't know",
-        "no information", "unable to answer", "does not include information", "i don't", "does not", "do not", "no data"
-    ]
-    is_fallback = any(phrase in answer.lower() for phrase in fallback_phrases)
+        # Check if answer indicates no information available (works for any language)
+        if is_no_information_answer(answer):
+            return {
+                "answer": answer,
+                "sources": []
+            }
 
-    if is_fallback or confidence_score < 0.3:
         return {
             "answer": answer,
-            "sources": []
+            "sources": extract_sources(source_docs)
         }
 
-    mentioned_sources = set()
-    for doc in sources:
-        src = doc.metadata.get("source")
-        if src:
-            if src.startswith("http"):
-                mentioned_sources.add("F24 Websites & HelpDocs")
-            else:
-                mentioned_sources.add("Knowledge Documents")
-        elif doc.metadata.get("row") is not None:
-            mentioned_sources.add("Knowledge Documents")
-
-    return {
-        "answer": answer,
-        "confidence_score": confidence_score,
-        "sources": sorted(mentioned_sources)
-    }
+    except Exception as e:
+        return {
+            "answer": f"Error processing question: {str(e)}",
+            "sources": []
+        }
