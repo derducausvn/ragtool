@@ -4,11 +4,11 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 
-from .generate import generate_answer
-from .sync_knowledge import sync_knowledge
-from .answer_questionnaire import router as answer_router
-from .questionnaire_history import router as questionnaire_router
-from .chat_history import (
+from generate import generate_answer
+from sync_knowledge import sync_knowledge
+from answer_questionnaire import router as answer_router
+from questionnaire_history import router as questionnaire_router
+from chat_history import (
     router as chat_router,
     get_chat_history,
     save_message,

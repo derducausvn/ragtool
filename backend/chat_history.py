@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select, delete
-from .models import ChatSession, ChatMessage
-from .db import get_session
+from models import ChatSession, ChatMessage
+from db import get_session
 
 router = APIRouter()
 
@@ -74,6 +74,5 @@ def new_chat(payload: dict = {}, session=Depends(get_session)):
     session.commit()
     session.refresh(chat)
     return {"session_id": chat.id}
-
 
 __all__ = ["router", "get_chat_history", "save_message", "list_sessions", "rename_chat", "delete_chat", "new_chat"]

@@ -6,10 +6,10 @@ from fastapi.responses import JSONResponse
 from langchain.schema import Document
 import logging
 
-from .generate import generate_answer
-from .parser import parse_file
-from .questionnaire_history import save_questionnaire_entry
-from .db import engine
+from generate import generate_answer
+from parser import parse_file
+from questionnaire_history import save_questionnaire_entry
+from db import engine
 from sqlmodel import Session
 
 router = APIRouter()
