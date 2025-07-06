@@ -8,6 +8,9 @@ import logging
 
 from .generate import generate_answer
 from .parser import parse_file
+from .questionnaire_history import save_questionnaire_entry
+from .db import engine
+from sqlmodel import Session
 
 router = APIRouter()
 
@@ -65,7 +68,21 @@ async def answer_questionnaire(file: UploadFile = File(...)):
                 })
 
         logging.info(f"Processed {len(results)} questions from questionnaire")
-        return JSONResponse(content={"questions_and_answers": results})
+        session = Session(engine)
+        try:
+            session_id = save_questionnaire_entry(
+                title=file.filename[:30],
+                file_name=file.filename,
+                results=results,
+                session=session
+            )
+        finally:
+            session.close()
+
+        return JSONResponse(content={
+            "questions_and_answers": results,
+            "session_id": session_id  # after saving entry
+        })
 
     except HTTPException:
         raise

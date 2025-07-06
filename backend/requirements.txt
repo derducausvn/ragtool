@@ -27,3 +27,5 @@ scikit-learn
 pandas
 
 openpyxl
+
+sqlmodel>=0.0.8
