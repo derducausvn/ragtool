@@ -15,5 +15,5 @@ def get_session():
     return Session(engine)
 
 def init_db():
-    from .models import ChatSession, ChatMessage, QuestionnaireSession
+    from models import ChatSession, ChatMessage, QuestionnaireSession
     SQLModel.metadata.create_all(engine)
