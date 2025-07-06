@@ -20,11 +20,11 @@ load_dotenv()
 
 app = FastAPI(title="RAG Agent", version="1.0.0")
 
-# CORS config (for local dev)
+# CORS config (for local dev/ online test with vercel)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"
-                   "https://f24questionnaire.vercel.app"],
+    allow_origins=["http://localhost:3000", "https://f24questionnaire.vercel.app", "https://f24questionnaire-git-main-ducs-projects.vercel.app"],
+
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
