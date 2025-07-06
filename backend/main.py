@@ -23,7 +23,8 @@ app = FastAPI(title="RAG Agent", version="1.0.0")
 # CORS config (for local dev)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000"
+                   "https://f24questionnaire.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
