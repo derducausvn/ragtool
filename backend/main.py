@@ -14,7 +14,7 @@ from chat_history import (
     save_message,
     list_sessions
 )
-from .db import init_db
+from db import init_db
 
 load_dotenv()
 
