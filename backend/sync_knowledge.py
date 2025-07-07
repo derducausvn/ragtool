@@ -16,7 +16,8 @@ os.makedirs(TEMP_DOWNLOAD_DIR, exist_ok=True)
 
 HELP_SITES = [
     "https://f24.com/en/",
-    "https://helpplus.fact24.com/l/en"
+    "https://helpplus.fact24.com/l/en",
+    "https://fact24.f24.com/en/"
 ]
 
 DROPBOX_FOLDER = "/ragtool_knowledgesource"
