@@ -692,7 +692,7 @@ const CustomerSupportAI = () => {
               {/* Right side: New Chat Button */}
               <button
                 onClick={startNewChat}
-                title="Start a new chat"
+                title="Start a new chat session"
                 className="flex items-center gap-2 text-sm font-medium text-white bg-gradient-to-r from-[#00B4F1] to-[#0077C8] px-4 py-2 rounded-lg hover:shadow-md"
               >
                 <Bot className="w-4 h-4" />
