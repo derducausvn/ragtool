@@ -9,18 +9,41 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from parser import parse_file
 from embedding import embed_documents
-from dropbox_api import list_dropbox_files, download_dropbox_file
+from google_drive_api import list_google_drive_files, download_google_drive_file
 
 TEMP_DOWNLOAD_DIR = 'temp_downloads'
+
+def load_urls_from_gdrive(file_name="sync_urls.txt") -> tuple[list[str], list[str]]:
+    """Load STATIC and DYNAMIC URLs from a Google Drive file."""
+    try:
+        files = list_google_drive_files(os.getenv("GOOGLE_DRIVE_FOLDER_ID"))
+        match = next((f for f in files if f["name"] == file_name), None)
+        if not match:
+            raise FileNotFoundError(f"{file_name} not found in Google Drive folder")
+
+        local_path = download_google_drive_file(match["id"], match["name"], save_dir=TEMP_DOWNLOAD_DIR)
+        static_urls = []
+        dynamic_urls = []
+
+        with open(local_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("STATIC:"):
+                    static_urls.append(line.replace("STATIC:", "").strip())
+                elif line.startswith("DYNAMIC:"):
+                    dynamic_urls.append(line.replace("DYNAMIC:", "").strip())
+                else:
+                    static_urls.append(line)
+
+        return static_urls, dynamic_urls
+    except Exception as e:
+        print(f"[sync_knowledge] Failed to load sync_urls.txt from GDrive: {e}")
+        return [], []
+
 os.makedirs(TEMP_DOWNLOAD_DIR, exist_ok=True)
 
-HELP_SITES = [
-    "https://f24.com/en/",
-    "https://helpplus.fact24.com/l/en",
-    "https://fact24.f24.com/en/"
-]
-
-DROPBOX_FOLDER = "/ragtool_knowledgesource"
 MAX_WEB_PAGES = 25
 PROCESSED_TRACK_FILE = 'processed_items.txt'
 
@@ -89,53 +112,70 @@ def crawl_static_links(base_url, max_pages=MAX_WEB_PAGES):
 
 
 def sync_knowledge():
+    # -------- Load URL sync list from Google Drive --------
+    static_urls, dynamic_urls = load_urls_from_gdrive()
     processed_ids = get_processed_ids()
     all_docs = []
     skipped_files = []
 
-    # -------- Dropbox folder sync --------
+    # -------- Google Drive folder sync --------
     try:
-        file_paths = list_dropbox_files(DROPBOX_FOLDER)
-        print(f"[sync_knowledge] Found {len(file_paths)} files in Dropbox folder")
-    
-        for path in file_paths:
+        files = list_google_drive_files(os.getenv("GOOGLE_DRIVE_FOLDER_ID"))
+        print(f"[sync_knowledge] Found {len(files)} files in Google Drive folder")
+
+        for file in files:
+            path = file["name"]
             try:
-                local_path = download_dropbox_file(path, save_dir=TEMP_DOWNLOAD_DIR)
-    
+                local_path = download_google_drive_file(file["id"], path, save_dir=TEMP_DOWNLOAD_DIR)
+
                 with open(local_path, 'rb') as f:
                     content_hash = hashlib.md5(f.read()).hexdigest()
                 identifier = f"{path}:{content_hash}"
-    
+
                 if identifier in processed_ids:
                     print(f"[sync_knowledge] Skipping already processed: {path}")
                     continue
-    
+
                 docs = parse_file(local_path)
                 for doc in docs:
                     doc.metadata["source"] = path
                 all_docs.extend(docs)
                 add_processed_id(identifier)
-                print(f"[sync_knowledge] Embedded {len(docs)} docs from Dropbox file: {path}")
+                print(f"[sync_knowledge] Embedded {len(docs)} docs from GoogleDrive file: {path}")
             except Exception as e:
                 print(f"[sync_knowledge] Failed to process {path}: {e}")
                 skipped_files.append(path)
     except Exception as e:
-        print(f"[sync_knowledge] Dropbox sync failed: {e}")
+        print(f"[sync_knowledge] GDrive sync failed: {e}")
+
 
     # -------- Web crawling --------
     web_docs = []
-    for site in HELP_SITES:
+    for site in dynamic_urls:
         try:
+            print(f"[sync_knowledge] Crawling dynamic site: {site}")
             urls = crawl_static_links(site, max_pages=MAX_WEB_PAGES)
-            new_urls = [u for u in urls if hash_content(u) not in processed_ids]
+            new_urls = []
+            for u in urls:
+                try:
+                    res = requests.get(u, timeout=10)
+                    if res.status_code != 200:
+                        continue
+                    content_hash = hash_content(res.text)
+                    identifier = f"{u}:{content_hash}"  # include content
+                    if identifier not in processed_ids:
+                        new_urls.append((u, identifier))
+                except Exception:
+                    continue
+
             if not new_urls:
                 continue
 
-            loader = WebBaseLoader(new_urls)
+            loader = WebBaseLoader([u for u, _ in new_urls])
             docs = loader.load()
-            for doc in docs:
+            for doc, (_, identifier) in zip(docs, new_urls):
                 doc.metadata["source"] = doc.metadata.get("source", "")
-                add_processed_id(hash_content(doc.metadata["source"]))
+                add_processed_id(identifier)
 
             docs = chunk_documents(docs)
             web_docs.extend(docs)
@@ -143,7 +183,35 @@ def sync_knowledge():
         except Exception as e:
             print(f"[sync_knowledge] Web crawl error for {site}: {e}")
 
+    # -------- Static Help Pages --------
+    static_docs = []
+    for url in static_urls:
+        try:
+            res = requests.get(url, timeout=10)
+            if res.status_code != 200:
+                continue
+            content_hash = hash_content(res.text)
+            identifier = f"{url}:{content_hash}"
+
+            if identifier in processed_ids:
+                print(f"[sync_knowledge] Skipping already processed static page: {url}")
+                continue
+
+            loader = WebBaseLoader([url])
+            docs = loader.load()
+            for doc in docs:
+                doc.metadata["source"] = url
+            docs = chunk_documents(docs)
+
+            static_docs.extend(docs)
+            add_processed_id(identifier)
+            print(f"[sync_knowledge] Embedded {len(docs)} static documents from {url}")
+
+        except Exception as e:
+            print(f"[sync_knowledge] Failed to process static help page {url}: {e}")
+
     all_docs.extend(web_docs)
+    all_docs.extend(static_docs)
     embedded_count = embed_documents(all_docs)
 
     return {
@@ -151,3 +219,4 @@ def sync_knowledge():
         "files_skipped": skipped_files,
         "web_pages_embedded": len(web_docs)
     }
+

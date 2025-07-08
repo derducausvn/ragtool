@@ -12,7 +12,14 @@ def get_drive_service():
     creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
     if not creds_json:
         raise RuntimeError("Missing GOOGLE_APPLICATION_CREDENTIALS_JSON env var")
+    
+    # Parse the JSON
     creds_dict = json.loads(creds_json)
+
+    # Fix: convert escaped \\n back to real newlines in private key
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    
     creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return build('drive', 'v3', credentials=creds)
 

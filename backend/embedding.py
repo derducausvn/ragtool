@@ -11,8 +11,8 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 VECTOR_DB_PATH = "vector_store"
-MAX_CHARS = 1000  # Smaller chunks for better retrieval
-CHUNK_OVERLAP = 200  # Overlap between chunks
+MAX_CHARS = 800  # Smaller chunks for better retrieval
+CHUNK_OVERLAP = 100  # Overlap between chunks
 BATCH_SIZE = 100
 
 # Cache embeddings instance
@@ -22,7 +22,10 @@ _text_splitter = None
 def get_embeddings():
     global _embeddings
     if _embeddings is None:
-        _embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
+        _embeddings = OpenAIEmbeddings(
+            api_key=OPENAI_API_KEY,
+            model="text-embedding-3-small"
+        )
     return _embeddings
 
 def get_text_splitter():

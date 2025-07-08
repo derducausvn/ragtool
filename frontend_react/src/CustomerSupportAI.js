@@ -5,30 +5,11 @@ import {
   MessageCircle, FileText, TrendingUp, Clock, X
 } from 'lucide-react';
 
-const API_BASE = process.env.REACT_APP_API_BASE;
-// const API_BASE = "http://127.0.0.1:8000"; // Local backend
+//const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE = "http://127.0.0.1:8000"; // Local backend
 const F24_BLUE = "#00B4F1";
 const F24_ACCENT = "#0077C8";
 
-const getDropdownPosition = (triggerRef) => {
-  if (!triggerRef?.current) return { top: 0, left: 0 };
-
-  const rect = triggerRef.current.getBoundingClientRect();
-  const dropdownWidth = 128;
-  const dropdownHeight = 80; // Approximate height
-  const padding = 12;
-
-  let top = rect.bottom + window.scrollY;
-  let left = rect.left + window.scrollX;
-
-  const maxLeft = window.innerWidth - dropdownWidth - padding;
-  const maxTop = window.innerHeight - dropdownHeight - padding;
-
-  if (left > maxLeft) left = maxLeft;
-  if (top > maxTop) top = rect.top - dropdownHeight; // Flip above trigger
-
-  return { top, left };
-};
 // Custom Delete Confirmation Modal Component
 const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, itemTitle }) => {
   if (!isOpen) return null;
@@ -84,7 +65,7 @@ const CustomerSupportAI = () => {
   const [batchResults, setBatchResults] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [chatList, setChatList] = useState([]);
-  const [syncProgress, setSyncProgress] = useState(0);
+  const [syncProgess, setSyncProgress] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [menuOpenId, setMenuOpenId] = useState(null);
@@ -100,8 +81,6 @@ const CustomerSupportAI = () => {
   const [showAllChats, setShowAllChats] = useState(false);
   const [showAllQuestionnaires, setShowAllQuestionnaires] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
-
-
   
   // Modal states
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -144,18 +123,6 @@ const CustomerSupportAI = () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
-
-  const saveChatHistory = async (newChat) => {
-    try {
-      await fetch(`${API_BASE}/chat/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newChat)
-      });
-    } catch (err) {
-      console.error("Failed to save chat:", err);
-    }
-  };
     
   const startNewChat = () => {
     setActiveSessionId(null);     
@@ -455,10 +422,10 @@ const CustomerSupportAI = () => {
       portalRoot
     );
   };
-
   const handleSync = async () => {
     setIsSyncing(true);
     setSyncProgress(0);
+
     const interval = setInterval(() => {
       setSyncProgress(prev => {
         if (prev >= 100) {
@@ -468,9 +435,24 @@ const CustomerSupportAI = () => {
         return prev + Math.random() * 10;
       });
     }, 300);
-    await fetch(`${API_BASE}/sync-knowledge`, { method: 'POST' });
-    setTimeout(() => setIsSyncing(false), 3500);
+
+    try {
+      const res = await fetch(`${API_BASE}/sync-knowledge`, { method: 'POST' });
+      if (!res.ok) {
+        throw new Error(`Sync failed with status ${res.status}`);
+      }
+      const data = await res.json();
+      console.log("✅ Sync response:", data);
+    } catch (err) {
+      console.error("❌ Sync error:", err);
+      alert("Knowledge sync failed.");
+    } finally {
+      clearInterval(interval);
+      setSyncProgress(100);
+      setTimeout(() => setIsSyncing(false), 1000);
+    }
   };
+
 
   const StatCard = ({ icon: Icon, label, value, trend, color }) => (
     <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition p-4 flex justify-between items-center">
@@ -823,7 +805,6 @@ const CustomerSupportAI = () => {
             </div>
           </div>
 
-          {/* Scorecards moved down */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-[#f9fafb] p-4 rounded-lg">
               <p className="text-sm font-semibold">Documents</p>

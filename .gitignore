@@ -20,4 +20,4 @@ token.pickle
 frontend/.streamlit/secrets.toml
 
 # Debug logs (optional)
-chat.dbg
+chat.db

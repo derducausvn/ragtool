@@ -24,7 +24,7 @@ def get_embeddings():
 def get_llm():
     global _llm
     if _llm is None:
-        _llm = ChatOpenAI(model="gpt-3.5-turbo-1106", temperature=0.7, api_key=OPENAI_API_KEY)
+        _llm = ChatOpenAI(model="gpt-4-1106-preview", temperature=0.7, api_key=OPENAI_API_KEY)
     return _llm
 
 def is_no_information_answer(answer: str) -> bool:
@@ -105,7 +105,7 @@ def generate_answer(question: str, mode: str = "F24 QA Expert") -> dict:
     try:
         embeddings = get_embeddings()
         db = FAISS.load_local(VECTOR_DB_PATH, embeddings, allow_dangerous_deserialization=True)
-        retriever = db.as_retriever(search_kwargs={"k": 5})
+        retriever = db.as_retriever(search_type="similarity_score_threshold", search_kwargs={"score_threshold": 0.6, "k": 10})
 
         # Create QA chain
         prompt = PromptTemplate.from_template("""
