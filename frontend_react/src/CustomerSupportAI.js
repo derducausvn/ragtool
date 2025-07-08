@@ -111,6 +111,9 @@ const CustomerSupportAI = () => {
       .then(res => res.json())
       .then(data => setQuestionnaireList(data.history || []));
 
+    // Fetch initial sync stats
+    fetchSyncStats();
+
     // Close menu on outside click (Portal-safe)
     const handleClickOutside = (event) => {
       if (
@@ -126,6 +129,27 @@ const CustomerSupportAI = () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  const fetchSyncStats = async () => {
+    try {
+      console.log('Fetching sync stats from:', `${API_BASE}/sync-stats`);
+      const res = await fetch(`${API_BASE}/sync-stats`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      const data = await res.json();
+      console.log('✅ Sync stats received:', data);
+      setKbStats({
+        documents: data.documents || 0,
+        websites: data.websites || 0,
+        lastSync: data.lastSync || null
+      });
+      setLastSync(data.lastSync || null);
+    } catch (err) {
+      console.error('❌ Failed to fetch sync stats:', err);
+      // Don't show alert for stats fetch failure, just log it
+    }
+  };
     
   const startNewChat = () => {
     setActiveSessionId(null);     
@@ -440,12 +464,10 @@ const CustomerSupportAI = () => {
     try {
       const res = await fetch(`${API_BASE}/sync-knowledge`, { method: 'POST' });
       if (!res.ok) throw new Error(`Sync failed with status ${res.status}`);
-      // Fetch new stats after sync
-      const statsRes = await fetch(`${API_BASE}/sync-stats`);
-      const statsData = await statsRes.json();
-      setKbStats(statsData);
-      setLastSync(statsData.lastSync);
-      console.log('✅ Sync response:', statsData);
+      
+      // Fetch updated stats after sync completes
+      await fetchSyncStats();
+      console.log('✅ Sync completed and stats refreshed');
     } catch (err) {
       alert('Knowledge sync failed.');
       console.error('❌ Sync error:', err);
@@ -804,35 +826,46 @@ const CustomerSupportAI = () => {
               <h3 className="text-lg font-semibold text-[#00B4F1]">Knowledge Base Management</h3>
               <p className="text-gray-400 text-sm">F24 QA Mode and Bulk Answering functions retrieve and use data from Knowledge Base.</p>
             </div>
-            <button
-              onClick={handleSync}
-              disabled={isSyncing}
-              className="flex items-center gap-2 bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white px-4 py-2 rounded-lg disabled:opacity-50 hover:shadow-md"
-            >
-              <RefreshCw className="w-5 h-5" />
-              {isSyncing ? 'Syncing...' : 'Sync Knowledge Base'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={fetchSyncStats}
+                disabled={isSyncing}
+                className="flex items-center gap-1 text-gray-600 hover:text-[#00B4F1] px-2 py-1 rounded transition-colors disabled:opacity-50"
+                title="Refresh stats"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Refresh
+              </button>
+              <button
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="flex items-center gap-2 bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white px-4 py-2 rounded-lg disabled:opacity-50 hover:shadow-md"
+              >
+                <RefreshCw className="w-5 h-5" />
+                {isSyncing ? 'Syncing...' : 'Sync Knowledge Base'}
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-4">
             <StatCard
               icon={FileText}
               label="Documents Chunks Embedded"
-              value={kbStats.documents}
-              trend={kbStats.documents > 0 ? '+Up to date' : ''}
+              value={kbStats.documents || 0}
+              trend={kbStats.documents > 0 ? '+Up to date' : 'No data'}
               color="#00B4F1"
             />
             <StatCard
               icon={MessageCircle}
               label="Webpage Sections Processed"
-              value={kbStats.websites}
-              trend={kbStats.websites > 0 ? '+Up to date' : ''}
+              value={kbStats.websites || 0}
+              trend={kbStats.websites > 0 ? '+Up to date' : 'No data'}
               color="#00B4F1"
             />
             <StatCard
               icon={Clock}
               label="Last Sync"
-              value={lastSync ? new Date(lastSync).toLocaleString() : 'Never'}
-              trend={lastSync ? '✔ Synced' : ''}
+              value={kbStats.lastSync || 'Never'}
+              trend={kbStats.lastSync ? '✔ Synced' : 'Not synced'}
               color="#00B4F1"
             />
           </div>

@@ -101,24 +101,32 @@ def crawl_static_links(base_url: str, max_pages: int = MAX_WEB_PAGES) -> list:
     return results[:max_pages]
 
 def sync_knowledge():
+    """
+    Main sync function with detailed progress logging for long-running operations.
+    """
+    print("[sync] === KNOWLEDGE SYNC STARTED ===")
+    start_time = __import__('time').time()
+    
     static_urls, dynamic_urls = load_sync_urls()
     processed_ids = get_processed_ids()
     all_docs, skipped_files, web_docs = [], [], []
 
     # --- Google Drive File Sync ---
+    print("[sync] === PHASE 1: Google Drive Files ===")
     try:
         files = list_google_drive_files(os.getenv("GOOGLE_DRIVE_FOLDER_ID"))
-        print(f"[sync] {len(files)} files found in Google Drive")
+        print(f"[sync] Found {len(files)} files in Google Drive")
 
-        for file in files:
+        for i, file in enumerate(files, 1):
             name = file["name"]
+            print(f"[sync] Processing file {i}/{len(files)}: {name}")
             try:
                 path = download_google_drive_file(file["id"], name, save_dir=TEMP_DOWNLOAD_DIR)
                 with open(path, "rb") as f:
                     content_hash = hashlib.md5(f.read()).hexdigest()
                 identifier = f"{name}:{content_hash}"
                 if identifier in processed_ids:
-                    print(f"[sync] Skipped (unchanged): {name}")
+                    print(f"[sync] ✓ Skipped (unchanged): {name}")
                     continue
 
                 docs = parse_file(path)
@@ -126,19 +134,24 @@ def sync_knowledge():
                     doc.metadata["source"] = name
                 all_docs.extend(docs)
                 add_processed_id(identifier)
-                print(f"[sync] Processed {len(docs)} docs from: {name}")
+                print(f"[sync] ✓ Processed {len(docs)} docs from: {name}")
 
             except Exception as e:
-                print(f"[sync] Failed to process {name}: {e}")
+                print(f"[sync] ✗ Failed to process {name}: {e}")
                 skipped_files.append(name)
+        
+        print(f"[sync] Google Drive phase complete: {len(all_docs)} documents processed")
     except Exception as e:
-        print(f"[sync] GDrive sync error: {e}")
+        print(f"[sync] ✗ GDrive sync error: {e}")
 
     # --- Dynamic Web Pages ---
-    for root_url in dynamic_urls:
+    print(f"[sync] === PHASE 2: Dynamic Websites ({len(dynamic_urls)} sites) ===")
+    for i, root_url in enumerate(dynamic_urls, 1):
         try:
-            print(f"[sync] Crawling site: {root_url}")
+            print(f"[sync] Crawling site {i}/{len(dynamic_urls)}: {root_url}")
             urls = crawl_static_links(root_url, max_pages=MAX_WEB_PAGES)
+            print(f"[sync] Found {len(urls)} pages to check")
+            
             new_urls = []
             for url in urls:
                 try:
@@ -152,8 +165,10 @@ def sync_knowledge():
                     continue
 
             if not new_urls:
+                print(f"[sync] ✓ No new content from {root_url}")
                 continue
 
+            print(f"[sync] Loading {len(new_urls)} new pages...")
             loader = WebBaseLoader([u for u, _ in new_urls])
             docs = loader.load()
             for doc, (_, ident) in zip(docs, new_urls):
@@ -161,20 +176,25 @@ def sync_knowledge():
                 add_processed_id(ident)
 
             web_docs.extend(docs)
-            print(f"[sync] Processed {len(docs)} web docs from {root_url}")
+            print(f"[sync] ✓ Processed {len(docs)} web docs from {root_url}")
         except Exception as e:
-            print(f"[sync] Web crawl error @ {root_url}: {e}")
+            print(f"[sync] ✗ Web crawl error @ {root_url}: {e}")
+
+    print(f"[sync] Dynamic websites phase complete: {len(web_docs)} documents processed")
 
     # --- Static Help Pages ---
+    print(f"[sync] === PHASE 3: Static URLs ({len(static_urls)} URLs) ===")
     static_docs = []
-    for url in static_urls:
+    for i, url in enumerate(static_urls, 1):
         try:
+            print(f"[sync] Processing URL {i}/{len(static_urls)}: {url}")
             res = requests.get(url, timeout=10)
             if res.status_code != 200:
+                print(f"[sync] ✗ HTTP {res.status_code} for {url}")
                 continue
             identifier = f"{url}:{hash_content(res.text)}"
             if identifier in processed_ids:
-                print(f"[sync] Skipped static page (cached): {url}")
+                print(f"[sync] ✓ Skipped static page (cached): {url}")
                 continue
 
             loader = WebBaseLoader([url])
@@ -183,26 +203,54 @@ def sync_knowledge():
                 doc.metadata["source"] = url
             static_docs.extend(docs)
             add_processed_id(identifier)
-            print(f"[sync] Processed {len(docs)} static docs from {url}")
+            print(f"[sync] ✓ Processed {len(docs)} static docs from {url}")
         except Exception as e:
-            print(f"[sync] Static sync error @ {url}: {e}")
+            print(f"[sync] ✗ Static sync error @ {url}: {e}")
+
+    print(f"[sync] Static URLs phase complete: {len(static_docs)} documents processed")
 
     # --- Final embedding ---
+    print("[sync] === PHASE 4: EMBEDDING TO POSTGRESQL ===")
     all_docs.extend(web_docs)
     all_docs.extend(static_docs)
     
     if all_docs:
         print(f"[sync] Starting embedding of {len(all_docs)} total documents...")
+        print("[sync] ⚠️  This may take several minutes for large document sets...")
+        print("[sync] ⚠️  Generating embeddings via OpenAI API and storing in PostgreSQL...")
+        
         embedded_count = embed_documents(all_docs)
-        print(f"[sync] Successfully embedded {embedded_count} document chunks to PostgreSQL")
+        print(f"[sync] ✅ Successfully embedded {embedded_count} document chunks to PostgreSQL")
     else:
-        print("[sync] No new documents to embed")
+        print("[sync] ℹ️  No new documents to embed")
         embedded_count = 0
+
+    # --- Summary ---
+    end_time = __import__('time').time()
+    duration = round(end_time - start_time, 2)
+    
+    print(f"[sync] === SYNC COMPLETE ===")
+    print(f"[sync] ⏱️  Total time: {duration} seconds")
+    print(f"[sync] 📊 Performance Summary:")
+    print(f"[sync]    • Google Drive files processed: {len(all_docs) - len(web_docs) - len(static_docs)}")
+    print(f"[sync]    • Dynamic web pages processed: {len(web_docs)}")
+    print(f"[sync]    • Static URLs processed: {len(static_docs)}")
+    print(f"[sync]    • Total documents embedded: {embedded_count}")
+    print(f"[sync]    • Files skipped/failed: {len(skipped_files)}")
+    if skipped_files:
+        print(f"[sync]    • Failed files: {', '.join(skipped_files[:5])}{' ...' if len(skipped_files) > 5 else ''}")
+    print(f"[sync] 🚀 Knowledge base ready for chat queries!")
+    
+    if embedded_count > 0:
+        docs_per_second = round(embedded_count / duration, 1)
+        print(f"[sync] 📈 Processing rate: {docs_per_second} docs/second")
 
     return {
         "documents_embedded": embedded_count,
         "files_skipped": skipped_files,
-        "web_pages_embedded": len(web_docs)
+        "web_pages_embedded": len(web_docs),
+        "duration_seconds": duration,
+        "total_documents_processed": len(all_docs)
     }
 
 # --- PLACEHOLDER ---
