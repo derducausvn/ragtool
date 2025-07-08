@@ -13,13 +13,8 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 
-# Try new langchain_postgres first, fallback to legacy if not available
-try:
-    from langchain_postgres import PGVector
-    USING_NEW_PGVECTOR = True
-except ImportError:
-    from langchain_community.vectorstores.pgvector import PGVector
-    USING_NEW_PGVECTOR = False
+# Import from embedding module which handles schema detection
+from embedding import get_pgvector_instance
 
 load_dotenv()
 
@@ -116,22 +111,7 @@ def generate_answer(question: str, mode: str = "F24 QA Expert") -> dict:
     # Knowledge-based mode using PGVector
     try:
         embeddings = get_embeddings()
-        
-        if USING_NEW_PGVECTOR:
-            # New langchain_postgres implementation
-            db = PGVector(
-                embeddings=embeddings,
-                connection=DATABASE_URL,
-                collection_name=COLLECTION_NAME,
-                use_jsonb=True,
-            )
-        else:
-            # Legacy implementation
-            db = PGVector(
-                connection_string=DATABASE_URL,
-                collection_name=COLLECTION_NAME,
-                embedding_function=embeddings,
-            )
+        db = get_pgvector_instance(embeddings)
         
         retriever = db.as_retriever(
             search_type="similarity_score_threshold",
