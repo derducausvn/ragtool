@@ -94,6 +94,9 @@ const CustomerSupportAI = () => {
     websitesCrawled: 25
   });
 
+  const [kbStats, setKbStats] = useState({ documents: 0, websites: 0, lastSync: null });
+  const [lastSync, setLastSync] = useState(null);
+
   useEffect(() => {
     // Fetch chat history on mount
     fetch(`${API_BASE}/chat/history`)
@@ -425,7 +428,6 @@ const CustomerSupportAI = () => {
   const handleSync = async () => {
     setIsSyncing(true);
     setSyncProgress(0);
-
     const interval = setInterval(() => {
       setSyncProgress(prev => {
         if (prev >= 100) {
@@ -435,17 +437,18 @@ const CustomerSupportAI = () => {
         return prev + Math.random() * 10;
       });
     }, 300);
-
     try {
       const res = await fetch(`${API_BASE}/sync-knowledge`, { method: 'POST' });
-      if (!res.ok) {
-        throw new Error(`Sync failed with status ${res.status}`);
-      }
-      const data = await res.json();
-      console.log("✅ Sync response:", data);
+      if (!res.ok) throw new Error(`Sync failed with status ${res.status}`);
+      // Fetch new stats after sync
+      const statsRes = await fetch(`${API_BASE}/sync-stats`);
+      const statsData = await statsRes.json();
+      setKbStats(statsData);
+      setLastSync(statsData.lastSync);
+      console.log('✅ Sync response:', statsData);
     } catch (err) {
-      console.error("❌ Sync error:", err);
-      alert("Knowledge sync failed.");
+      alert('Knowledge sync failed.');
+      console.error('❌ Sync error:', err);
     } finally {
       clearInterval(interval);
       setSyncProgress(100);
@@ -466,6 +469,14 @@ const CustomerSupportAI = () => {
       </div>
     </div>
   );
+
+  const chatEndRef = React.useRef(null);
+
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatHistory, isLoading]);
 
   return (
     <div className="flex min-h-screen bg-[#f5f7fa] font-sans">
@@ -716,6 +727,7 @@ const CustomerSupportAI = () => {
               {isLoading && (
                 <div className="bg-gray-200 text-sm px-4 py-2 rounded-lg w-max animate-pulse">...</div>
               )}
+              <div ref={chatEndRef} />
             </div>
 
             {/* Input Area */}
@@ -786,34 +798,43 @@ const CustomerSupportAI = () => {
         )}
 
         {/* Sync Footer */}
-        <div className="bg-white p-6 rounded-xl shadow text-sm text-gray-700">
-          <h3 className="text-lg font-semibold mb-2 text-[#00B4F1]">Knowledge Base Management</h3>
-          <p className="text-gray-400 text-sm mb-4">F24 QA Mode and Bulk Answering functions retrieve and use data from Knowledge Base.</p>
-          <div className="flex justify-between items-center mb-4">
+        <div className="bg-white p-6 rounded-xl shadow text-sm text-gray-700 mt-8">
+          <div className="flex justify-between items-center mb-2">
+            <div>
+              <h3 className="text-lg font-semibold text-[#00B4F1]">Knowledge Base Management</h3>
+              <p className="text-gray-400 text-sm">F24 QA Mode and Bulk Answering functions retrieve and use data from Knowledge Base.</p>
+            </div>
             <button
               onClick={handleSync}
               disabled={isSyncing}
               className="flex items-center gap-2 bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white px-4 py-2 rounded-lg disabled:opacity-50 hover:shadow-md"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-5 h-5" />
               {isSyncing ? 'Syncing...' : 'Sync Knowledge Base'}
             </button>
-
-            <div className="text-right">
-              <p className="text-sm font-semibold text-gray-600">Last Sync:</p>
-              <p className="text-xs text-gray-500">{new Date().toLocaleString()}</p>
-            </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-[#f9fafb] p-4 rounded-lg">
-              <p className="text-sm font-semibold">Documents</p>
-              <p>{stats.documentsProcessed} indexed</p>
-            </div>
-            <div className="bg-[#f9fafb] p-4 rounded-lg">
-              <p className="text-sm font-semibold">Websites</p>
-              <p>{stats.websitesCrawled} crawled</p>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+            <StatCard
+              icon={FileText}
+              label="Documents Chunks Embedded"
+              value={kbStats.documents}
+              trend={kbStats.documents > 0 ? '+Up to date' : ''}
+              color="#00B4F1"
+            />
+            <StatCard
+              icon={MessageCircle}
+              label="Webpage Sections Processed"
+              value={kbStats.websites}
+              trend={kbStats.websites > 0 ? '+Up to date' : ''}
+              color="#00B4F1"
+            />
+            <StatCard
+              icon={Clock}
+              label="Last Sync"
+              value={lastSync ? new Date(lastSync).toLocaleString() : 'Never'}
+              trend={lastSync ? '✔ Synced' : ''}
+              color="#00B4F1"
+            />
           </div>
         </div>
       </div>

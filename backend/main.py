@@ -1,13 +1,22 @@
+"""
+main.py (Refactored)
+---------------------
+FastAPI application entry point for RAG system.
+Includes core routing, shared request types, and modular router loading.
+Future-ready for auth middleware, logging, and Microsoft integrations.
+"""
+
 import os
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from fastapi.middleware.cors import CORSMiddleware
 
 from generate import generate_answer
 from sync_knowledge import sync_knowledge
 from answer_questionnaire import router as answer_router
 from questionnaire_history import router as questionnaire_router
+from embedding import get_sync_stats_live
 from chat_history import (
     router as chat_router,
     get_chat_history,
@@ -18,45 +27,44 @@ from db import init_db
 
 load_dotenv()
 
+# --- App Instance ---
 app = FastAPI(title="RAG Agent", version="1.0.0")
 
-# CORS config (for local dev/ online test with vercel)
+# --- CORS (allow local + deployed frontend) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://f24questionnaire.vercel.app", "https://f24questionnaire-git-main-ducs-projects.vercel.app"],
-
+    allow_origins=[
+        "http://localhost:3000",
+        "https://f24questionnaire.vercel.app",
+        "https://f24questionnaire-git-main-ducs-projects.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# --- On Startup ---
 @app.on_event("startup")
 def on_startup():
     init_db()
+    os.makedirs("temp_uploads", exist_ok=True)  # ensure temp dir exists
 
-# Register routers
+# --- Routers ---
 app.include_router(chat_router)
 app.include_router(answer_router)
 app.include_router(questionnaire_router)
 
-# Ensure upload directory exists
-UPLOAD_DIR = "temp_uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-@app.get("/")
-def root():
-    return {"message": "RAG Agent is running!"}
-
-# -------------------------
-# SHARED REQUEST STRUCTURE
-# -------------------------
+# --- Shared Model ---
 class QuestionRequest(BaseModel):
     question: str
     mode: str = "F24 QA Expert"
 
-# -------------------------
-# GENERATION (single)
-# -------------------------
+# --- Health Check ---
+@app.get("/")
+def root():
+    return {"message": "RAG Agent is running!"}
+
+# --- Single QA ---
 @app.post("/generate")
 def generate(req: QuestionRequest):
     try:
@@ -69,24 +77,19 @@ def generate(req: QuestionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
 
-# -------------------------
-# SYNC ENDPOINT
-# -------------------------
+# --- Sync Trigger ---
 @app.post("/sync-knowledge")
 def sync_knowledge_endpoint():
     try:
-        result = sync_knowledge()
-        return result
+        return sync_knowledge()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
-# -------------------------
-# CHAT CONTINUATION ENDPOINTS
-# -------------------------
+# --- Chat API ---
 @app.post("/chat/{session_id}/message")
 def chat_message(session_id: str, req: QuestionRequest):
-    # 💡 Only save user message if this is not the first one
     history = get_chat_history(session_id)
+    # Save message if it's new
     if not history or history[-1]["role"] != "user" or history[-1]["content"] != req.question:
         save_message(session_id, "user", req.question)
 
@@ -107,3 +110,14 @@ def get_full_chat(session_id: str):
 @app.get("/chat")
 def get_all_chat_sessions():
     return {"sessions": list_sessions()}
+
+@app.get("/sync-stats")
+def sync_stats():
+    try:
+        return get_sync_stats_live()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+
+# --- PLACEHOLDERS ---
+# Future: /auth/login, /admin/stats, user access logging, file tagging

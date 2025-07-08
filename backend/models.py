@@ -1,8 +1,20 @@
-from sqlmodel import SQLModel, Field, Relationship
+"""
+models.py (Refactored)
+----------------------
+Defines database schema for chat and questionnaire sessions.
+Uses SQLModel for fast ORM-like access. Ready for expansion (user ID, tags, etc.).
+
+Models:
+- ChatSession: groups messages by conversation
+- ChatMessage: stores role/content/timestamp
+- QuestionnaireSession: stores uploaded questionnaire responses
+"""
+
 from typing import List, Optional
 from datetime import datetime
+from sqlmodel import SQLModel, Field, Relationship
 
-
+# --- Chat Session Entity ---
 class ChatSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
@@ -10,19 +22,23 @@ class ChatSession(SQLModel, table=True):
 
     messages: List["ChatMessage"] = Relationship(back_populates="session")
 
-
+# --- Chat Message Entity ---
 class ChatMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     session_id: int = Field(foreign_key="chatsession.id")
-    role: str
+    role: str  # "user" or "assistant"
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    session: Optional[ChatSession] = Relationship(back_populates="messages")  # ← THIS LINE FIXES THE ISSUE
+    session: Optional[ChatSession] = Relationship(back_populates="messages")
 
+# --- Questionnaire Session Entity ---
 class QuestionnaireSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     file_name: str
-    results_json: str  # JSON-encoded Q&A results
+    results_json: str  # JSON-encoded list of Q&A dicts
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# --- PLACEHOLDER ---
+# Future: Add user_id, questionnaire tags, versioning support

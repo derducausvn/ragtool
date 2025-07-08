@@ -1,0 +1,12 @@
+# Render.com FastAPI deployment
+
+# Python version
+python_version = "3.10"
+
+[build]
+# Install dependencies
+command = "pip install -r requirements.txt"
+
+[start]
+# Start FastAPI with uvicorn
+command = "uvicorn main:app --host 0.0.0.0 --port 10000"
