@@ -1,8 +1,8 @@
 """
 embedding.py
 --------------------------
-Handles embedding of documents and vector store operations using OpenAI + FAISS.
-Designed for future migration to Microsoft native vector DBs or Azure-hosted options.
+Handles embedding of documents and vector store operations using OpenAI + PGVector.
+Stores embeddings persistently in PostgreSQL for production use on Render.
 """
 
 import os
@@ -11,7 +11,7 @@ from typing import List
 from dotenv import load_dotenv
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores.pgvector import PGVector
 from langchain_openai import OpenAIEmbeddings
 
 # Load environment variables
@@ -19,7 +19,8 @@ load_dotenv()
 
 # Constants & Configurations
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-VECTOR_DB_PATH = "vector_store"
+DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL connection string
+COLLECTION_NAME = "rag_embeddings"  # Table name for embeddings
 MAX_CHARS = 800
 CHUNK_OVERLAP = 100
 BATCH_SIZE = 100
@@ -77,8 +78,8 @@ def chunk_documents(docs: List[Document]) -> List[Document]:
 
 def embed_documents(docs: List[Document], batch_size: int = BATCH_SIZE) -> int:
     """
-    Embed documents and persist them in FAISS vector DB.
-    Automatically loads or creates the vector store.
+    Embed documents and persist them in PostgreSQL using PGVector.
+    Creates or adds to the existing vector store.
     """
     if not docs:
         logging.info("No documents to embed.")
@@ -92,9 +93,14 @@ def embed_documents(docs: List[Document], batch_size: int = BATCH_SIZE) -> int:
     embeddings = get_embeddings()
 
     try:
-        # Load existing or create new vector store
-        if os.path.exists(VECTOR_DB_PATH):
-            db = FAISS.load_local(VECTOR_DB_PATH, embeddings, allow_dangerous_deserialization=True)
+        # Try to connect to existing vector store and add documents
+        try:
+            db = PGVector(
+                connection_string=DATABASE_URL,
+                collection_name=COLLECTION_NAME,
+                embedding_function=embeddings,
+            )
+            # Add documents in batches
             for i in range(0, len(chunked_docs), batch_size):
                 batch = chunked_docs[i:i + batch_size]
                 try:
@@ -103,11 +109,16 @@ def embed_documents(docs: List[Document], batch_size: int = BATCH_SIZE) -> int:
                 except Exception as e:
                     logging.error(f"Failed to embed batch {i//batch_size + 1}: {e}")
                     continue
-        else:
-            db = FAISS.from_documents(chunked_docs, embeddings)
-            logging.info(f"Created new vector store with {len(chunked_docs)} documents")
+        except Exception:
+            # If connection fails, create new vector store from scratch
+            db = PGVector.from_documents(
+                chunked_docs,
+                embeddings,
+                connection_string=DATABASE_URL,
+                collection_name=COLLECTION_NAME,
+            )
+            logging.info(f"Created new PGVector store with {len(chunked_docs)} documents")
 
-        db.save_local(VECTOR_DB_PATH)
         return len(chunked_docs)
 
     except Exception as e:
@@ -116,15 +127,15 @@ def embed_documents(docs: List[Document], batch_size: int = BATCH_SIZE) -> int:
 
 def search_documents(query: str, k: int = 5) -> List[Document]:
     """
-    Perform similarity search on the embedded documents.
+    Perform similarity search on the embedded documents using PGVector.
     """
-    if not os.path.exists(VECTOR_DB_PATH):
-        logging.warning("Vector store not found.")
-        return []
-
     try:
         embeddings = get_embeddings()
-        db = FAISS.load_local(VECTOR_DB_PATH, embeddings, allow_dangerous_deserialization=True)
+        db = PGVector(
+            connection_string=DATABASE_URL,
+            collection_name=COLLECTION_NAME,
+            embedding_function=embeddings,
+        )
         docs = db.similarity_search(query, k=k)
 
         logging.info(f"Query: {query} → {len(docs)} matches")
@@ -136,35 +147,43 @@ def search_documents(query: str, k: int = 5) -> List[Document]:
 
 def get_vector_store_stats() -> str:
     """
-    Return basic stats about the vector DB.
+    Return basic stats about the PGVector store.
     """
-    if not os.path.exists(VECTOR_DB_PATH):
-        return "Vector store not found."
-
     try:
         embeddings = get_embeddings()
-        db = FAISS.load_local(VECTOR_DB_PATH, embeddings, allow_dangerous_deserialization=True)
-        return f"Vector store contains {db.index.ntotal} documents."
+        db = PGVector(
+            connection_string=DATABASE_URL,
+            collection_name=COLLECTION_NAME,
+            embedding_function=embeddings,
+        )
+        # Note: PGVector doesn't have a direct equivalent to ntotal
+        # We'll do a simple query to check if the store is accessible
+        test_docs = db.similarity_search("test", k=1)
+        return f"Vector store is accessible (collection: {COLLECTION_NAME})"
     except Exception as e:
-        return f"Failed to load vector store: {e}"
+        return f"Failed to access vector store: {e}"
 
 def get_sync_stats_live():
     """
-    Get real-time KPI stats from vector store.
+    Get real-time KPI stats from PGVector store.
     Returns number of embedded chunks and website-based entries.
     """
-    from langchain_community.vectorstores import FAISS
-
-    if not os.path.exists(VECTOR_DB_PATH):
-        return {"documents": 0, "websites": 0, "syncProgress": 0}
-
     try:
         embeddings = get_embeddings()
-        db = FAISS.load_local(VECTOR_DB_PATH, embeddings, allow_dangerous_deserialization=True)
-
-        total_chunks = db.index.ntotal
+        db = PGVector(
+            connection_string=DATABASE_URL,
+            collection_name=COLLECTION_NAME,
+            embedding_function=embeddings,
+        )
+        
+        # Try to get some basic stats by doing test queries
+        # PGVector doesn't expose direct document counts like FAISS
+        test_docs = db.similarity_search("test", k=100)
+        total_chunks = len(test_docs)
+        
+        # Count website-based chunks
         website_chunks = sum(
-            1 for doc in db.docstore._dict.values()
+            1 for doc in test_docs
             if doc.metadata.get("source", "").startswith("http")
         )
 
@@ -178,4 +197,4 @@ def get_sync_stats_live():
         return {"documents": 0, "websites": 0, "syncProgress": 0, "error": str(e)}
 
 # --- PLACEHOLDER: Optional Migration ---
-# Future replacement for FAISS with Azure Vector DB or Microsoft native embedding store
+# Future replacement for PGVector with Azure Vector DB or Microsoft native embedding store

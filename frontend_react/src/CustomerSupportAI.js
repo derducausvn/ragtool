@@ -5,8 +5,8 @@ import {
   MessageCircle, FileText, TrendingUp, Clock, X
 } from 'lucide-react';
 
-const API_BASE = process.env.REACT_APP_API_BASE;
-//const API_BASE = "http://127.0.0.1:8000"; // Local backend
+//const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE = "http://127.0.0.1:8000"; // Local backend
 const F24_BLUE = "#00B4F1";
 const F24_ACCENT = "#0077C8";
 

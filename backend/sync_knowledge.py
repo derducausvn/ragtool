@@ -67,10 +67,6 @@ def add_processed_id(identifier: str):
 def hash_content(content: str) -> str:
     return hashlib.md5(content.encode("utf-8")).hexdigest()
 
-def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    return splitter.split_documents(documents)
-
 def crawl_static_links(base_url: str, max_pages: int = MAX_WEB_PAGES) -> list:
     """Recursively crawl a domain and return a list of same-domain subpages."""
     visited = set()
@@ -130,7 +126,7 @@ def sync_knowledge():
                     doc.metadata["source"] = name
                 all_docs.extend(docs)
                 add_processed_id(identifier)
-                print(f"[sync] Embedded {len(docs)} docs from: {name}")
+                print(f"[sync] Processed {len(docs)} docs from: {name}")
 
             except Exception as e:
                 print(f"[sync] Failed to process {name}: {e}")
@@ -164,9 +160,8 @@ def sync_knowledge():
                 doc.metadata["source"] = doc.metadata.get("source", "")
                 add_processed_id(ident)
 
-            docs = chunk_documents(docs)
             web_docs.extend(docs)
-            print(f"[sync] Embedded {len(docs)} web docs from {root_url}")
+            print(f"[sync] Processed {len(docs)} web docs from {root_url}")
         except Exception as e:
             print(f"[sync] Web crawl error @ {root_url}: {e}")
 
@@ -186,17 +181,23 @@ def sync_knowledge():
             docs = loader.load()
             for doc in docs:
                 doc.metadata["source"] = url
-            docs = chunk_documents(docs)
             static_docs.extend(docs)
             add_processed_id(identifier)
-            print(f"[sync] Embedded {len(docs)} static docs from {url}")
+            print(f"[sync] Processed {len(docs)} static docs from {url}")
         except Exception as e:
             print(f"[sync] Static sync error @ {url}: {e}")
 
     # --- Final embedding ---
     all_docs.extend(web_docs)
     all_docs.extend(static_docs)
-    embedded_count = embed_documents(all_docs)
+    
+    if all_docs:
+        print(f"[sync] Starting embedding of {len(all_docs)} total documents...")
+        embedded_count = embed_documents(all_docs)
+        print(f"[sync] Successfully embedded {embedded_count} document chunks to PostgreSQL")
+    else:
+        print("[sync] No new documents to embed")
+        embedded_count = 0
 
     return {
         "documents_embedded": embedded_count,

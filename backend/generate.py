@@ -3,22 +3,23 @@ generate.py (Refactored)
 ------------------------
 Handles answer generation logic using GPT + knowledge base.
 Supports two modes: knowledge-based QA and general chat.
-Modularized for logging, fallback logic, and future enhancements.
+Uses PGVector for persistent PostgreSQL-based vector storage.
 """
 
 import os
 import logging
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores.pgvector import PGVector
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 
 load_dotenv()
 
 # --- Config ---
-VECTOR_DB_PATH = "vector_store"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL connection string
+COLLECTION_NAME = "rag_embeddings"  # Same as embedding.py
 
 # --- Internal Cache ---
 _embeddings = None
@@ -87,7 +88,7 @@ def generate_answer(question: str, mode: str = "F24 QA Expert") -> dict:
     """
     Generate response from LLM with or without knowledge base depending on mode.
     Modes:
-    - "F24 QA Expert": Uses FAISS vector store
+    - "F24 QA Expert": Uses PGVector PostgreSQL store
     - "General Chat": LLM-only response
     """
     if not OPENAI_API_KEY:
@@ -105,16 +106,16 @@ def generate_answer(question: str, mode: str = "F24 QA Expert") -> dict:
         except Exception as e:
             return {"answer": f"LLM error: {e}", "sources": None}
 
-    if not os.path.exists(VECTOR_DB_PATH):
-        return {"answer": "Knowledge base is empty. Please sync knowledge first.", "sources": []}
-
+    # Knowledge-based mode using PGVector
     try:
-        # WARNING: The 'allow_dangerous_deserialization=True' flag is required for loading pickled FAISS indexes,
-        # but it introduces a security risk. Only load from trusted sources and ensure the vector_store directory
-        # is protected from tampering or unauthorized replacement.
-        retriever = FAISS.load_local(
-            VECTOR_DB_PATH, get_embeddings(), allow_dangerous_deserialization=True
-        ).as_retriever(
+        embeddings = get_embeddings()
+        db = PGVector(
+            connection_string=DATABASE_URL,
+            collection_name=COLLECTION_NAME,
+            embedding_function=embeddings,
+        )
+        
+        retriever = db.as_retriever(
             search_type="similarity_score_threshold",
             search_kwargs={"score_threshold": 0.3, "k": 10}
         )
@@ -153,7 +154,8 @@ Question: {question}
         }
 
     except Exception as e:
-        return {"answer": f"Error during knowledge-based generation: {e}", "sources": []}
+        logging.error(f"Error during knowledge-based generation: {e}")
+        return {"answer": f"Error accessing knowledge base: {e}", "sources": []}
 
 # --- PLACEHOLDER ---
 # Future extension: Azure OpenAI, logging question source, token cost tracking
