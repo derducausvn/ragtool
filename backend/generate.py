@@ -109,6 +109,9 @@ def generate_answer(question: str, mode: str = "F24 QA Expert") -> dict:
         return {"answer": "Knowledge base is empty. Please sync knowledge first.", "sources": []}
 
     try:
+        # WARNING: The 'allow_dangerous_deserialization=True' flag is required for loading pickled FAISS indexes,
+        # but it introduces a security risk. Only load from trusted sources and ensure the vector_store directory
+        # is protected from tampering or unauthorized replacement.
         retriever = FAISS.load_local(
             VECTOR_DB_PATH, get_embeddings(), allow_dangerous_deserialization=True
         ).as_retriever(
