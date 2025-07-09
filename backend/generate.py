@@ -12,9 +12,10 @@ from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+from langchain_postgres import PGVector
 
-# Import from embedding module which handles schema detection
-from embedding import get_pgvector_instance
+# Import from embedding module for shared configurations
+from embedding import get_embeddings
 
 load_dotenv()
 
@@ -24,15 +25,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL connection string
 COLLECTION_NAME = "rag_embeddings"  # Same as embedding.py
 
 # --- Internal Cache ---
-_embeddings = None
 _llm = None
-
-def get_embeddings():
-    """Initialize OpenAI embedding instance once."""
-    global _embeddings
-    if _embeddings is None:
-        _embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
-    return _embeddings
 
 def get_llm():
     """Initialize OpenAI chat model once."""
@@ -111,7 +104,12 @@ def generate_answer(question: str, mode: str = "F24 QA Expert") -> dict:
     # Knowledge-based mode using PGVector
     try:
         embeddings = get_embeddings()
-        db = get_pgvector_instance(embeddings)
+        db = PGVector(
+            embeddings=embeddings,
+            connection=DATABASE_URL,
+            collection_name=COLLECTION_NAME,
+            use_jsonb=True,
+        )
         
         retriever = db.as_retriever(
             search_type="similarity_score_threshold",

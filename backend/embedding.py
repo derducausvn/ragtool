@@ -13,19 +13,7 @@ from dotenv import load_dotenv
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-
-# Try new langchain_postgres first, fallback to legacy if not available
-try:
-    from langchain_postgres import PGVector
-    NEW_PGVECTOR_AVAILABLE = True
-except ImportError:
-    NEW_PGVECTOR_AVAILABLE = False
-
-# Always import the legacy version as fallback
-from langchain_community.vectorstores.pgvector import PGVector as LegacyPGVector
-
-# We'll determine which to use based on database schema at runtime
-USING_NEW_PGVECTOR = False  # Will be set dynamically
+from langchain_postgres import PGVector
 
 # Load environment variables
 load_dotenv()
@@ -120,9 +108,13 @@ def embed_documents(docs: List[Document], batch_size: int = BATCH_SIZE) -> int:
     embedded_count = 0
 
     try:
-        # Get the appropriate PGVector instance based on database schema
-        embeddings = get_embeddings()
-        db = get_pgvector_instance(embeddings)
+        # Create PGVector instance
+        db = PGVector(
+            embeddings=embeddings,
+            connection=DATABASE_URL,
+            collection_name=COLLECTION_NAME,
+            use_jsonb=True,
+        )
         
         # Add documents in batches with better error handling
         total_batches = (len(chunked_docs) + batch_size - 1) // batch_size
@@ -179,7 +171,12 @@ def search_documents(query: str, k: int = 5) -> List[Document]:
     """
     try:
         embeddings = get_embeddings()
-        db = get_pgvector_instance(embeddings)
+        db = PGVector(
+            embeddings=embeddings,
+            connection=DATABASE_URL,
+            collection_name=COLLECTION_NAME,
+            use_jsonb=True,
+        )
         docs = db.similarity_search(query, k=k)
 
         logging.info(f"🔍 Query: '{query}' → {len(docs)} matches")
@@ -196,9 +193,10 @@ def get_vector_store_stats() -> str:
     try:
         embeddings = get_embeddings()
         db = PGVector(
-            connection_string=DATABASE_URL,
+            embeddings=embeddings,
+            connection=DATABASE_URL,
             collection_name=COLLECTION_NAME,
-            embedding_function=embeddings,
+            use_jsonb=True,
         )
         # Note: PGVector doesn't have a direct equivalent to ntotal
         # We'll do a simple query to check if the store is accessible
@@ -227,7 +225,12 @@ def get_sync_stats_live():
         
         # Fallback to similarity search estimation
         embeddings = get_embeddings()
-        db = get_pgvector_instance(embeddings)
+        db = PGVector(
+            embeddings=embeddings,
+            connection=DATABASE_URL,
+            collection_name=COLLECTION_NAME,
+            use_jsonb=True,
+        )
         
         # Get a larger sample to estimate total documents
         # We'll use a high k value and search for a common term
@@ -279,8 +282,6 @@ def get_exact_document_count():
     """
     Get exact document count by querying PostgreSQL directly.
     This is more accurate than similarity search sampling.
-    Works with both legacy and new PGVector schemas.
-    Handles the case where tables don't exist yet (fresh PostgreSQL migration).
     """
     try:
         import psycopg2
@@ -299,7 +300,7 @@ def get_exact_document_count():
         
         cursor = conn.cursor()
         
-        # First check if the tables exist at all (fresh PostgreSQL migration)
+        # Check if the tables exist
         cursor.execute("""
             SELECT table_name 
             FROM information_schema.tables 
@@ -309,23 +310,13 @@ def get_exact_document_count():
         existing_tables = [row[0] for row in cursor.fetchall()]
         
         if 'langchain_pg_collection' not in existing_tables or 'langchain_pg_embedding' not in existing_tables:
-            # Tables don't exist yet - this is a fresh PostgreSQL setup
-            logging.info("📊 PostgreSQL tables don't exist yet - this is a fresh migration from SQLite")
+            # Tables don't exist yet
+            logging.info("📊 PostgreSQL tables don't exist yet")
             cursor.close()
             conn.close()
             return 0, 0
         
-        # Check which schema we're using
-        cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'langchain_pg_embedding'
-        """)
-        
-        columns = [row[0] for row in cursor.fetchall()]
-        has_id_column = 'id' in columns
-        
-        # Get collection UUID first (safer approach for both schemas)
+        # Get collection UUID
         cursor.execute("SELECT uuid FROM langchain_pg_collection WHERE name = %s", (COLLECTION_NAME,))
         collection_result = cursor.fetchone()
         
@@ -338,7 +329,7 @@ def get_exact_document_count():
             
         collection_id = collection_result[0]
         
-        # Count documents (safer query that handles both schemas)
+        # Count documents
         try:
             cursor.execute("SELECT COUNT(*) FROM langchain_pg_embedding WHERE collection_id = %s", (collection_id,))
             result = cursor.fetchone()
@@ -347,126 +338,42 @@ def get_exact_document_count():
             logging.warning(f"Could not count total documents: {count_error}")
             total_count = 0
         
-        # Count website chunks (safer query with better error handling)
+        # Count website chunks
         try:
-            # Only count if we have documents
             if total_count > 0:
                 cursor.execute("""
                     SELECT COUNT(*) FROM langchain_pg_embedding 
                     WHERE collection_id = %s 
-                    AND cmetadata IS NOT NULL 
-                    AND cmetadata::text LIKE '%http%'
+                    AND cmetadata ->> 'source' LIKE 'http%'
                 """, (collection_id,))
                 result = cursor.fetchone()
                 website_count = result[0] if result and len(result) > 0 else 0
+                
+                # Debug: Let's see what sources we actually have
+                cursor.execute("""
+                    SELECT DISTINCT cmetadata ->> 'source' FROM langchain_pg_embedding 
+                    WHERE collection_id = %s 
+                    AND cmetadata ->> 'source' IS NOT NULL
+                    LIMIT 10
+                """, (collection_id,))
+                sources_sample = cursor.fetchall()
+                logging.info(f"📊 Sample sources in DB: {[s[0] for s in sources_sample]}")
+                
             else:
                 website_count = 0
         except Exception as web_count_error:
-            # Silent fallback for empty database
+            logging.debug(f"Website count query failed: {web_count_error}")
             website_count = 0
         
         cursor.close()
         conn.close()
         
-        schema_type = 'new' if has_id_column else 'legacy'
-        logging.info(f"📊 Exact counts ({schema_type} schema): {total_count} total chunks, {website_count} from websites")
+        logging.info(f"📊 Exact counts: {total_count} total chunks, {website_count} from websites")
+        
         return total_count, website_count
         
     except Exception as e:
         logging.warning(f"Could not get exact count from PostgreSQL: {e}")
-        logging.warning("This might be expected if you're migrating from SQLite to PostgreSQL")
         return None, None
-
-def detect_database_schema():
-    """
-    Detect which PGVector schema is being used in the database.
-    Returns True if new schema (with id column), False if legacy schema.
-    Handles fresh PostgreSQL migrations where tables don't exist yet.
-    """
-    try:
-        import psycopg2
-        from urllib.parse import urlparse
-        
-        # Parse DATABASE_URL to get connection parameters
-        url = urlparse(DATABASE_URL)
-        
-        conn = psycopg2.connect(
-            host=url.hostname,
-            port=url.port,
-            database=url.path[1:],  # Remove leading slash
-            user=url.username,
-            password=url.password
-        )
-        
-        cursor = conn.cursor()
-        
-        # Check if tables exist first (important for SQLite → PostgreSQL migration)
-        cursor.execute("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_name = 'langchain_pg_embedding'
-        """)
-        
-        if not cursor.fetchone():
-            # Tables don't exist - this is a fresh PostgreSQL setup from SQLite migration
-            logging.info("🔄 PostgreSQL tables don't exist yet - defaulting to legacy schema for initial setup")
-            cursor.close()
-            conn.close()
-            return False  # Use legacy for initial table creation
-        
-        # Check if the new schema table exists with id column
-        cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'langchain_pg_embedding' 
-            AND column_name = 'id'
-        """)
-        
-        has_id_column = cursor.fetchone() is not None
-        
-        cursor.close()
-        conn.close()
-        
-        schema_type = 'new' if has_id_column else 'legacy'
-        logging.info(f"🔍 Detected database schema: {schema_type}")
-        return has_id_column
-        
-    except Exception as e:
-        logging.warning(f"Could not detect database schema: {e}")
-        logging.warning("This might be expected during SQLite → PostgreSQL migration")
-        return False  # Default to legacy schema for safety
-
-def get_pgvector_instance(embeddings_func):
-    """
-    Get the appropriate PGVector instance based on database schema.
-    """
-    global USING_NEW_PGVECTOR
-    
-    # Detect schema on first use
-    if NEW_PGVECTOR_AVAILABLE:
-        has_new_schema = detect_database_schema()
-        USING_NEW_PGVECTOR = has_new_schema
-        
-        if has_new_schema:
-            logging.info("✅ Using new langchain_postgres.PGVector (detected compatible schema)")
-            from langchain_postgres import PGVector
-            return PGVector(
-                embeddings=embeddings_func,
-                connection=DATABASE_URL,
-                collection_name=COLLECTION_NAME,
-                use_jsonb=True,
-            )
-        else:
-            logging.info("⚠️  New schema not detected, using legacy PGVector")
-    else:
-        logging.info("⚠️  langchain_postgres not available, using legacy PGVector")
-    
-    # Use legacy implementation
-    USING_NEW_PGVECTOR = False
-    return LegacyPGVector(
-        connection_string=DATABASE_URL,
-        collection_name=COLLECTION_NAME,
-        embedding_function=embeddings_func,
-    )
 
 # --- END OF FILE ---

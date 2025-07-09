@@ -2,13 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Send, ArrowLeftToLine, ArrowRightToLine, Ellipsis, Upload, RefreshCw, Search, Bot,
-  MessageCircle, FileText, TrendingUp, Clock, X
+  MessageCircle, FileText, Clock, X
 } from 'lucide-react';
 
-const API_BASE = process.env.REACT_APP_API_BASE;
-//const API_BASE = "http://127.0.0.1:8000"; // Local backend
+//const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE = "http://127.0.0.1:10000"; // Local backend
 const F24_BLUE = "#00B4F1";
-const F24_ACCENT = "#0077C8";
 
 // Custom Delete Confirmation Modal Component
 const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, itemTitle }) => {
@@ -86,16 +85,7 @@ const CustomerSupportAI = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [chatToDelete, setChatToDelete] = useState(null);
 
-  const [stats] = useState({
-    totalQueries: 275,
-    avgResponseTime: '1.5s',
-    accuracy: 94,
-    documentsProcessed: 1250,
-    websitesCrawled: 25
-  });
-
   const [kbStats, setKbStats] = useState({ documents: 0, websites: 0, lastSync: null });
-  const [lastSync, setLastSync] = useState(null);
 
   useEffect(() => {
     // Fetch chat history on mount
@@ -130,6 +120,22 @@ const CustomerSupportAI = () => {
     };
   }, []);
 
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'Never';
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (err) {
+      return timestamp; // Fallback to raw timestamp if parsing fails
+    }
+  };
+
   const fetchSyncStats = async () => {
     try {
       console.log('Fetching sync stats from:', `${API_BASE}/sync-stats`);
@@ -144,7 +150,6 @@ const CustomerSupportAI = () => {
         websites: data.websites || 0,
         lastSync: data.lastSync || null
       });
-      setLastSync(data.lastSync || null);
     } catch (err) {
       console.error('❌ Failed to fetch sync stats:', err);
       // Don't show alert for stats fetch failure, just log it
@@ -486,7 +491,8 @@ const CustomerSupportAI = () => {
         <p className="text-xl font-bold text-gray-900">{value}</p>
         {trend && <p className="text-xs text-green-600 mt-1">{trend}</p>}
       </div>
-      <div className={`p-2 rounded-full text-white`} style={{ backgroundColor: color }}>
+      <div className={`p-2 rounded-full text-white ${color.startsWith('bg-gradient') ? color : ''}`} 
+           style={color.startsWith('bg-gradient') ? {} : { background: color }}>
         <Icon className="w-5 h-5" />
       </div>
     </div>
@@ -666,14 +672,6 @@ const CustomerSupportAI = () => {
 
       {/* Main content */}
       <div className="flex-1 p-6">
-        {/* KPI cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <StatCard icon={MessageCircle} label="Total Queries Today" value={stats.totalQueries} trend="+12% from yesterday" color={F24_BLUE} />
-          <StatCard icon={Clock} label="Avg Response Time" value={stats.avgResponseTime} trend="-0.3s improved" color={F24_ACCENT} />
-          <StatCard icon={TrendingUp} label="Accuracy Rate" value={`${stats.accuracy}%`} trend="+2% this week" color="#9966CC" />
-          <StatCard icon={FileText} label="KB Documents" value={stats.documentsProcessed} trend="Updated 2hrs ago" color="#F59E0B" />
-        </div>
-
         {/* Tabs */}
         <div className="flex gap-6 border-b border-gray-200 mb-4">
           {['chat', 'upload'].map(name => (
@@ -689,37 +687,24 @@ const CustomerSupportAI = () => {
 
         {tab === 'chat' && (
           <div className="bg-white p-6 rounded-xl shadow-md mb-6">
-            {/* Top Row: AI Mode + New Chat Button */}
-            <div className="mb-4 flex justify-between items-start">
-              {/* Left side: AI Mode */}
-              <div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-gray-700">AI Mode:</span>
-                  {['F24 QA Expert', 'General Chat'].map(m => (
-                    <button
-                      key={m}
-                      onClick={() => setMode(m)}
-                      className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-                        mode === m
-                          ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white shadow'
-                          : 'bg-white border text-gray-600 hover:border-[#00B4F1]'
-                      }`}
-                    >
-                      {m === 'General Chat' ? 'General Assistant' : 'F24 QA Expert'}
-                    </button>
-                  ))}
-                </div>
+            {/* AI Mode Selection */}
+            <div className="mb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-gray-700">AI Mode:</span>
+                {['F24 QA Expert', 'General Chat'].map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+                      mode === m
+                        ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white shadow'
+                        : 'bg-white border text-gray-600 hover:border-[#00B4F1]'
+                    }`}
+                  >
+                    {m === 'General Chat' ? 'General Assistant' : 'F24 QA Expert'}
+                  </button>
+                ))}
               </div>
-
-              {/* Right side: New Chat Button */}
-              <button
-                onClick={startNewChat}
-                title="Start a new chat session"
-                className="flex items-center gap-2 text-sm font-medium text-white bg-gradient-to-r from-[#00B4F1] to-[#0077C8] px-4 py-2 rounded-lg hover:shadow-md"
-              >
-                <Bot className="w-4 h-4" />
-                New Chat
-              </button>
             </div>
 
             {/* Chat History */}
@@ -754,6 +739,14 @@ const CustomerSupportAI = () => {
 
             {/* Input Area */}
             <div className="mt-4 flex gap-2">
+              <button
+                onClick={startNewChat}
+                title="Start a new chat session"
+                className="flex items-center gap-2 text-sm font-medium text-white bg-gradient-to-r from-[#00B4F1] to-[#0077C8] px-4 py-2 rounded-full hover:shadow-md"
+              >
+                <Bot className="w-4 h-4" />
+                New Chat
+              </button>
               <div className="relative flex-1">
                 <input
                   value={userInput}
@@ -852,21 +845,21 @@ const CustomerSupportAI = () => {
               label="Documents Chunks Embedded"
               value={kbStats.documents || 0}
               trend={kbStats.documents > 0 ? '+Up to date' : 'No data'}
-              color="#00B4F1"
+              color="bg-gradient-to-r from-[#00B4F1] to-[#0077C8]"
             />
             <StatCard
               icon={MessageCircle}
               label="Webpage Sections Processed"
               value={kbStats.websites || 0}
               trend={kbStats.websites > 0 ? '+Up to date' : 'No data'}
-              color="#00B4F1"
+              color="bg-gradient-to-r from-green-500 to-green-600"
             />
             <StatCard
               icon={Clock}
               label="Last Sync"
-              value={kbStats.lastSync || 'Never'}
+              value={formatTimestamp(kbStats.lastSync)}
               trend={kbStats.lastSync ? '✔ Synced' : 'Not synced'}
-              color="#00B4F1"
+              color="bg-gradient-to-r from-purple-500 to-purple-600"
             />
           </div>
         </div>
