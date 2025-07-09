@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Send, ArrowLeftToLine, ArrowRightToLine, Ellipsis, Upload, RefreshCw, Search, Bot,
-  MessageCircle, FileText, Clock, X
+  MessageCircle, FileText, TrendingUp, Clock, X
 } from 'lucide-react';
 
 //const API_BASE = process.env.REACT_APP_API_BASE;
-const API_BASE = "http://127.0.0.1:10000"; // Local backend
-const F24_BLUE = "#00B4F1";
+const API_BASE = "http://127.0.0.1:8000"; // Local backend
 
 // Custom Delete Confirmation Modal Component
 const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, itemTitle }) => {
@@ -85,7 +84,16 @@ const CustomerSupportAI = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [chatToDelete, setChatToDelete] = useState(null);
 
+  const [stats] = useState({
+    totalQueries: 275,
+    avgResponseTime: '1.5s',
+    accuracy: 94,
+    documentsProcessed: 1250,
+    websitesCrawled: 25
+  });
+
   const [kbStats, setKbStats] = useState({ documents: 0, websites: 0, lastSync: null });
+  const [lastSync, setLastSync] = useState(null);
 
   useEffect(() => {
     // Fetch chat history on mount
@@ -120,22 +128,6 @@ const CustomerSupportAI = () => {
     };
   }, []);
 
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return 'Never';
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch (err) {
-      return timestamp; // Fallback to raw timestamp if parsing fails
-    }
-  };
-
   const fetchSyncStats = async () => {
     try {
       console.log('Fetching sync stats from:', `${API_BASE}/sync-stats`);
@@ -150,6 +142,7 @@ const CustomerSupportAI = () => {
         websites: data.websites || 0,
         lastSync: data.lastSync || null
       });
+      setLastSync(data.lastSync || null);
     } catch (err) {
       console.error('❌ Failed to fetch sync stats:', err);
       // Don't show alert for stats fetch failure, just log it
@@ -491,8 +484,7 @@ const CustomerSupportAI = () => {
         <p className="text-xl font-bold text-gray-900">{value}</p>
         {trend && <p className="text-xs text-green-600 mt-1">{trend}</p>}
       </div>
-      <div className={`p-2 rounded-full text-white ${color.startsWith('bg-gradient') ? color : ''}`} 
-           style={color.startsWith('bg-gradient') ? {} : { background: color }}>
+      <div className={`p-2 rounded-full text-white`} style={{ backgroundColor: color }}>
         <Icon className="w-5 h-5" />
       </div>
     </div>
@@ -522,7 +514,7 @@ const CustomerSupportAI = () => {
         <div className="flex items-center justify-between mb-4">
           {!sidebarCollapsed && (
             <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg text-white" style={{ backgroundColor: F24_BLUE }}>
+              <div className="p-2 rounded-lg text-white bg-gradient-to-r from-[#00B4F1] to-[#0077C8]">
                 <Bot className="w-5 h-5" />
               </div>
               <div>
@@ -687,23 +679,26 @@ const CustomerSupportAI = () => {
 
         {tab === 'chat' && (
           <div className="bg-white p-6 rounded-xl shadow-md mb-6">
-            {/* AI Mode Selection */}
-            <div className="mb-4">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-700">AI Mode:</span>
-                {['F24 QA Expert', 'General Chat'].map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setMode(m)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-                      mode === m
-                        ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white shadow'
-                        : 'bg-white border text-gray-600 hover:border-[#00B4F1]'
-                    }`}
-                  >
-                    {m === 'General Chat' ? 'General Assistant' : 'F24 QA Expert'}
-                  </button>
-                ))}
+            {/* Top Row: AI Mode */}
+            <div className="mb-4 flex justify-between items-start">
+              {/* Left side: AI Mode */}
+              <div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-700">AI Mode:</span>
+                  {['F24 QA Expert', 'General Chat'].map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+                        mode === m
+                          ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white shadow'
+                          : 'bg-white border text-gray-600 hover:border-[#00B4F1]'
+                      }`}
+                    >
+                      {m === 'General Chat' ? 'General Assistant' : 'F24 QA Expert'}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -737,12 +732,13 @@ const CustomerSupportAI = () => {
               <div ref={chatEndRef} />
             </div>
 
-            {/* Input Area */}
+            {/* Input Area with New Chat Button on the left */}
             <div className="mt-4 flex gap-2">
               <button
                 onClick={startNewChat}
                 title="Start a new chat session"
-                className="flex items-center gap-2 text-sm font-medium text-white bg-gradient-to-r from-[#00B4F1] to-[#0077C8] px-4 py-2 rounded-full hover:shadow-md"
+                className="flex items-center gap-2 text-sm font-medium text-white bg-gradient-to-r from-[#00B4F1] to-[#0077C8] px-4 py-2 rounded-lg hover:shadow-md"
+                style={{ minWidth: '110px' }}
               >
                 <Bot className="w-4 h-4" />
                 New Chat
@@ -845,21 +841,21 @@ const CustomerSupportAI = () => {
               label="Documents Chunks Embedded"
               value={kbStats.documents || 0}
               trend={kbStats.documents > 0 ? '+Up to date' : 'No data'}
-              color="bg-gradient-to-r from-[#00B4F1] to-[#0077C8]"
+              color="#00B4F1"
             />
             <StatCard
               icon={MessageCircle}
               label="Webpage Sections Processed"
               value={kbStats.websites || 0}
               trend={kbStats.websites > 0 ? '+Up to date' : 'No data'}
-              color="bg-gradient-to-r from-green-500 to-green-600"
+              color="#00B4F1"
             />
             <StatCard
               icon={Clock}
               label="Last Sync"
-              value={formatTimestamp(kbStats.lastSync)}
+              value={kbStats.lastSync || 'Never'}
               trend={kbStats.lastSync ? '✔ Synced' : 'Not synced'}
-              color="bg-gradient-to-r from-purple-500 to-purple-600"
+              color="#00B4F1"
             />
           </div>
         </div>
