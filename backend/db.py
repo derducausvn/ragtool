@@ -18,12 +18,24 @@ DATABASE_URL = os.environ["DATABASE_URL"]  # Require this to be set, no fallback
 # --- Engine Init ---
 engine = create_engine(
     DATABASE_URL,
-    echo=True
+    echo=True,
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=30,
+    pool_recycle=1800  # Recycle connections every 30 minutes
 )
 
-# --- Session Factory ---
+# --- Session Factory (FastAPI Dependency) ---
 def get_session():
-    return Session(engine)
+    """
+    FastAPI dependency that provides a database session.
+    Automatically closes the session when the request is complete.
+    """
+    session = Session(engine)
+    try:
+        yield session
+    finally:
+        session.close()
 
 # --- Initializer ---
 def init_db():

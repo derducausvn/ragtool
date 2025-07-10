@@ -6,9 +6,9 @@ Supports create, retrieve, rename, and delete. Lightweight design for extensibil
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import select, delete
+from sqlmodel import select, delete, Session
 from models import ChatSession, ChatMessage
-from db import get_session
+from db import get_session, engine
 
 router = APIRouter()
 
@@ -76,21 +76,27 @@ def delete_chat(session_id: int, session=Depends(get_session)):
 
 # --- Utility: Get full history for session ---
 def get_chat_history(session_id: int):
-    with get_session() as session:
+    session = Session(engine)
+    try:
         messages = session.exec(
             select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.timestamp)
         ).all()
         return [{"role": m.role, "content": m.content} for m in messages]
+    finally:
+        session.close()
 
 # --- Utility: List all chat sessions ---
 def list_sessions():
-    with get_session() as session:
+    session = Session(engine)
+    try:
         sessions = session.exec(select(ChatSession).order_by(ChatSession.created_at.desc())).all()
         return [{"id": s.id, "title": s.title} for s in sessions]
+    finally:
+        session.close()
 
 # --- Utility: Save single message ---
 def save_message(session_id: int, role: str, content: str):
-    session = get_session()
+    session = Session(engine)
     try:
         msg = ChatMessage(session_id=session_id, role=role, content=content)
         session.add(msg)

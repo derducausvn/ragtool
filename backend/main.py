@@ -1,29 +1,26 @@
 """
-main.py (Refactored)
+main.py (OpenAI Assistant Only)
 ---------------------
-FastAPI application entry point for RAG system.
-Includes core routing, shared request types, and modular router loading.
-Future-ready for auth middleware, logging, and Microsoft integrations.
+FastAPI application entry point for OpenAI Assistant-based RAG system.
 """
 
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from generate import generate_answer
-from sync_knowledge import sync_knowledge
+from generate import generate_answer_with_assistant
 from answer_questionnaire import router as answer_router
 from questionnaire_history import router as questionnaire_router
-from embedding import get_sync_stats_live
 from chat_history import (
     router as chat_router,
     get_chat_history,
     save_message,
     list_sessions
 )
-from db import init_db
+from db import init_db, get_session
+from openai_file_upload import router as openai_file_upload_router
 
 load_dotenv()
 
@@ -53,70 +50,54 @@ def on_startup():
 app.include_router(chat_router)
 app.include_router(answer_router)
 app.include_router(questionnaire_router)
+app.include_router(openai_file_upload_router)
 
-# --- Shared Model ---
-class QuestionRequest(BaseModel):
+# --- Request Models ---
+class AssistantRequest(BaseModel):
     question: str
-    mode: str = "F24 QA Expert"
+    session_id: int = None  # Optional session ID for persistence
 
 # --- Health Check ---
 @app.get("/")
 def root():
     return {"message": "RAG Agent is running!"}
 
-# --- Single QA ---
-@app.post("/generate")
-def generate(req: QuestionRequest):
-    try:
-        result = generate_answer(req.question, req.mode)
-        return {
-            "question": req.question,
-            "answer": result.get("answer", ""),
-            "sources": result.get("sources", [])
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
-
-# --- Sync Trigger ---
-@app.post("/sync-knowledge")
-def sync_knowledge_endpoint():
-    try:
-        return sync_knowledge()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
-
-# --- Chat API ---
-@app.post("/chat/{session_id}/message")
-def chat_message(session_id: str, req: QuestionRequest):
-    history = get_chat_history(session_id)
-    # Save message if it's new
-    if not history or history[-1]["role"] != "user" or history[-1]["content"] != req.question:
-        save_message(session_id, "user", req.question)
-
-    result = generate_answer(req.question, req.mode)
-    answer = result.get("answer", "")
-    save_message(session_id, "assistant", answer)
-
-    return {
-        "question": req.question,
-        "answer": answer,
-        "sources": result.get("sources", [])
-    }
-
+# --- Chat History APIs (for session listing/history UI) ---
 @app.get("/chat/{session_id}")
-def get_full_chat(session_id: str):
+def get_full_chat(session_id: int):
     return {"history": get_chat_history(session_id)}
 
 @app.get("/chat")
 def get_all_chat_sessions():
     return {"sessions": list_sessions()}
 
-@app.get("/sync-stats")
-def sync_stats():
+# --- Assistant API ---
+@app.post("/chat/assistant")
+def chat_assistant(req: AssistantRequest, session=Depends(get_session)):
     try:
-        return get_sync_stats_live()
+        # Generate answer using the assistant
+        result = generate_answer_with_assistant(req.question)
+        
+        # generate_answer_with_assistant returns a list, so get the first answer
+        if isinstance(result, list) and len(result) > 0:
+            answer = result[0]
+        else:
+            answer = "No answer generated."
+        
+        # If session_id is provided, save the conversation to the database
+        if req.session_id:
+            # Save user message
+            save_message(req.session_id, "user", req.question)
+            # Save assistant response
+            save_message(req.session_id, "assistant", answer)
+            
+        return {
+            "question": req.question,
+            "answer": answer,
+            "session_id": req.session_id
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Assistant failed: {str(e)}")
 
 
 # --- PLACEHOLDERS ---

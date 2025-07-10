@@ -13,8 +13,8 @@ from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from langchain.schema import Document
-from generate import generate_answer
-from parser import parse_file
+from generate import generate_answer_with_assistant
+from questionnaire_parser import parse_questionnaire_file
 from questionnaire_history import save_questionnaire_entry
 from db import engine
 from sqlmodel import Session
@@ -47,30 +47,29 @@ async def answer_questionnaire(file: UploadFile = File(...)):
             temp_file.write(content)
             temp_path = temp_file.name
 
-        # Parse to questions (chunks)
-        chunks: List[Document] = parse_file(temp_path)
+        # --- LLM-powered question extraction ---
+        # Uses OpenAI Assistant (asst_LHcHlznpeN50voRNxJA8FgZV) for robust, multilingual question extraction from any supported file type.
+        # Returns a list of langchain.schema.Document objects, each representing a question.
+        chunks: List[Document] = parse_questionnaire_file(temp_path)
         if not chunks:
-            raise HTTPException(status_code=400, detail="File content could not be extracted.")
+            logging.warning(f"No questions extracted from file: {file.filename}")
+            raise HTTPException(status_code=400, detail="No questions could be extracted from the uploaded file. Please check the file format and content.")
 
+        # --- LLM-powered answer generation (batch) ---
+        # Collect all non-empty questions
+        questions = [chunk.page_content.strip() for chunk in chunks if chunk.page_content.strip()]
+        if not questions:
+            logging.warning(f"No valid questions found in file: {file.filename}")
+            raise HTTPException(status_code=400, detail="No valid questions found in the uploaded file.")
+
+        # Generate answers in a single batch call
+        answers = generate_answer_with_assistant(questions)
         results = []
-        for i, chunk in enumerate(chunks):
-            question = chunk.page_content.strip()
-            if not question:
-                continue
-            try:
-                answer_data = generate_answer(question)
-                results.append({
-                    "question": question,
-                    "answer": answer_data.get("answer", ""),
-                    "sources": answer_data.get("sources", [])
-                })
-            except Exception as e:
-                logging.error(f"Q{i} failed: {e}")
-                results.append({
-                    "question": question,
-                    "answer": f"Error generating answer: {str(e)}",
-                    "sources": []
-                })
+        for q, a in zip(questions, answers):
+            results.append({
+                "question": q,
+                "answer": a
+            })
 
         logging.info(f"Processed {len(results)} questions from upload: {file.filename}")
 
