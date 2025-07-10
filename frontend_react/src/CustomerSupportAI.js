@@ -5,8 +5,12 @@ import {
   MessageCircle, FileText, TrendingUp, Clock, X
 } from 'lucide-react';
 
-//const API_BASE = process.env.REACT_APP_API_BASE;
-const API_BASE = "http://127.0.0.1:8000"; // Local backend
+// Flexible API base URL for different environments
+const API_BASE = process.env.REACT_APP_API_BASE || 
+  (process.env.NODE_ENV === 'production' 
+    ? 'https://ragtool-backend.onrender.com'  // Your Render backend URL
+    : 'http://127.0.0.1:8000'  // Local development
+  );
 
 // Custom Delete Confirmation Modal Component
 const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, itemTitle }) => {
@@ -583,7 +587,7 @@ const CustomerSupportAI = () => {
     if (knowledgeUploadStatus?.type === 'success') {
       const timer = setTimeout(() => {
         setKnowledgeUploadStatus(null);
-      }, 1000); // Clear after 5 seconds
+      }, 10000); // Clear after 5 seconds
       return () => clearTimeout(timer);
     }
   }, [knowledgeUploadStatus]);
