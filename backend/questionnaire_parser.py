@@ -23,7 +23,8 @@ def create_text_splitter(chunk_size: int = DEFAULT_CHUNK_SIZE, chunk_overlap: in
 
 def parse_questionnaire_file(file_path: str) -> List[Document]:
     """
-    Uses OpenAI Assistant (asst_LHcHlznpeN50voRNxJA8FgZV) to extract questions from any questionnaire file.
+    Uses OpenAI Assistant to extract questions from any questionnaire file.
+    Assistant ID must be configured via OPENAI_QUESTION_EXTRACT_ASSISTANT_ID environment variable.
     Returns a list of Documents, one per detected question.
     """
     try:
@@ -51,7 +52,9 @@ def parse_questionnaire_file(file_path: str) -> List[Document]:
             content_for_llm = f"Extract all questions or prompts from the following text.\n\n{text}"
 
         # 2. Call OpenAI Assistant to extract questions
-        assistant_id = "asst_LHcHlznpeN50voRNxJA8FgZV"
+        assistant_id = os.getenv("OPENAI_QUESTION_EXTRACT_ASSISTANT_ID")
+        if not assistant_id:
+            raise ValueError("OPENAI_QUESTION_EXTRACT_ASSISTANT_ID environment variable not set")
         openai.api_key = os.getenv("OPENAI_API_KEY")
         thread = openai.beta.threads.create()
         openai.beta.threads.messages.create(
