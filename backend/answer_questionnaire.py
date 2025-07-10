@@ -13,7 +13,6 @@ from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from langchain.schema import Document
-from generate import generate_answer_with_assistant
 from questionnaire_parser import parse_questionnaire_file
 from questionnaire_history import save_questionnaire_entry
 from db import engine
@@ -62,8 +61,17 @@ async def answer_questionnaire(file: UploadFile = File(...)):
             logging.warning(f"No valid questions found in file: {file.filename}")
             raise HTTPException(status_code=400, detail="No valid questions found in the uploaded file.")
 
-        # Generate answers in a single batch call
-        answers = generate_answer_with_assistant(questions)
+        # Call batch processor directly for multiple questions
+        import os
+        from openai_integration import query_openai_assistant_batch
+        
+        ASSISTANT_ID = os.getenv("OPENAI_RAG_ASSISTANT_ID")
+        if not ASSISTANT_ID:
+            raise HTTPException(status_code=500, detail="Assistant ID not configured")
+        
+        logging.info(f"Processing {len(questions)} questions in batch mode")
+        answers = query_openai_assistant_batch(questions, ASSISTANT_ID)
+        
         results = []
         for q, a in zip(questions, answers):
             results.append({

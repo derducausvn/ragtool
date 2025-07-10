@@ -6,14 +6,42 @@ FastAPI endpoint to upload any knowledge file (Excel, PDF, Word, etc.) to OpenAI
 
 import os
 import tempfile
+import time
 import requests
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
-from openai_integration import upload_file_to_openai_storage, add_file_to_openai_assistant_vector_store
 from web_utils import crawl_static_links
 from bs4 import BeautifulSoup
+from excel_to_pdf_converter import convert_excel_for_knowledge_base, is_excel_file
+import logging
 
 router = APIRouter()
+
+# Utility function for safe file cleanup
+def safe_cleanup_error(file_path):
+    """Cleanup file ignoring any errors (for error handling scenarios)."""
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except:
+        pass  # Ignore cleanup errors during error handling
+
+def safe_cleanup_with_retry(file_path, max_retries=3):
+    """Safely cleanup files with retry logic for Windows file locking issues."""
+    for attempt in range(max_retries):
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            return
+        except PermissionError as e:
+            if attempt < max_retries - 1:
+                logging.info(f"File locked, retrying cleanup in 0.5s: {file_path}")
+                time.sleep(0.5)
+            else:
+                logging.warning(f"Could not cleanup file after {max_retries} attempts: {file_path} - {e}")
+        except Exception as e:
+            logging.warning(f"Unexpected cleanup error for {file_path}: {e}")
+            return
 
 @router.post("/upload-knowledge-file")
 async def upload_knowledge_file(file: UploadFile = File(...)):
@@ -33,28 +61,85 @@ async def upload_knowledge_file(file: UploadFile = File(...)):
         temp_path = os.path.join(temp_dir, file.filename)
         with open(temp_path, "wb") as f_out:
             f_out.write(await file.read())
+        
+        # Check if file is Excel and convert to PDF if needed
+        upload_file_path = temp_path
+        converted_file = False
+        
+        if is_excel_file(file.filename):
+            try:
+                logging.info(f"Converting Excel file {file.filename} to PDF for knowledge base")
+                pdf_path = convert_excel_for_knowledge_base(temp_path, temp_dir)
+                upload_file_path = pdf_path
+                converted_file = True
+                logging.info(f"Successfully converted {file.filename} to PDF")
+                
+                # Give a small delay to ensure file handles are released
+                time.sleep(0.1)
+                
+            except Exception as e:
+                logging.warning(f"Failed to convert Excel to PDF: {e}. Uploading original file.")
+                # Fall back to uploading original Excel file
+                upload_file_path = temp_path
+                converted_file = False
+        
         # 1. Upload file to OpenAI storage
         url = "https://api.openai.com/v1/files"
         headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
-        with open(temp_path, "rb") as f_in:
+        with open(upload_file_path, "rb") as f_in:
             files = {"file": f_in, "purpose": (None, "assistants")}
             resp = requests.post(url, headers=headers, files=files)
+        
         if resp.status_code != 200:
+            # Cleanup before raising exception
+            safe_cleanup_error(temp_path)
+            if converted_file and upload_file_path != temp_path:
+                safe_cleanup_error(upload_file_path)
             raise HTTPException(status_code=500, detail=f"OpenAI file upload failed: {resp.text}")
+        
         file_id = resp.json()["id"]
+        
         # 2. Attach file to vector store
         url2 = f"https://api.openai.com/v1/vector_stores/{VECTOR_STORE_ID}/files"
         data = {"file_id": file_id}
         resp2 = requests.post(url2, headers=headers, json=data)
+        
         if resp2.status_code != 200:
+            # Cleanup before raising exception
+            safe_cleanup_error(temp_path)
+            if converted_file and upload_file_path != temp_path:
+                safe_cleanup_error(upload_file_path)
             raise HTTPException(status_code=500, detail=f"OpenAI vector store attach failed: {resp2.text}")
-        os.remove(temp_path)
+        
+        # Cleanup temporary files after successful upload
+        safe_cleanup_with_retry(temp_path)
+        if converted_file and upload_file_path != temp_path:
+            safe_cleanup_with_retry(upload_file_path)
+        
+        response_message = "File uploaded and attached to vector store via REST API."
+        if converted_file:
+            response_message += " (Excel file was converted to PDF for better knowledge base compatibility.)"
+        
         return JSONResponse(content={
-            "message": "File uploaded and attached to vector store via REST API.",
+            "message": response_message,
             "file_id": file_id,
-            "vector_store_id": VECTOR_STORE_ID
+            "vector_store_id": VECTOR_STORE_ID,
+            "converted_to_pdf": converted_file
         })
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
+        # Cleanup on any unexpected error
+        try:
+            if 'temp_path' in locals():
+                safe_cleanup_error(temp_path)
+            if 'upload_file_path' in locals() and upload_file_path != temp_path:
+                safe_cleanup_error(upload_file_path)
+        except:
+            pass
+        
+        logging.error(f"Unexpected error in upload_knowledge_file: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 @router.post("/upload-website-content")
@@ -62,8 +147,6 @@ async def upload_website_content(payload: dict):
     """
     Crawls up to `max_pages` from the given URL's domain, aggregates main text, and uploads to OpenAI vector store.
     """
-    import time
-    
     url = payload.get("url")
     max_pages = payload.get("max_pages", 5)
     

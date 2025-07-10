@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from generate import generate_answer_with_assistant
 from answer_questionnaire import router as answer_router
 from questionnaire_history import router as questionnaire_router
 from chat_history import (
@@ -75,14 +74,20 @@ def get_all_chat_sessions():
 @app.post("/chat/assistant")
 def chat_assistant(req: AssistantRequest, session=Depends(get_session)):
     try:
-        # Generate answer using the assistant
-        result = generate_answer_with_assistant(req.question)
+        import logging
+        import os
+        from openai_integration import query_openai_assistant
         
-        # generate_answer_with_assistant returns a list, so get the first answer
-        if isinstance(result, list) and len(result) > 0:
-            answer = result[0]
-        else:
-            answer = "No answer generated."
+        ASSISTANT_ID = os.getenv("OPENAI_RAG_ASSISTANT_ID")
+        if not ASSISTANT_ID:
+            raise HTTPException(status_code=500, detail="Assistant ID not configured")
+        
+        logging.info(f"Direct assistant call for question: {req.question[:50]}...")
+        
+        # Call OpenAI assistant directly - no unnecessary layers
+        answer = query_openai_assistant(req.question, ASSISTANT_ID)
+        
+        logging.info(f"Direct answer generated: {answer[:100]}...")
         
         # If session_id is provided, save the conversation to the database
         if req.session_id:
@@ -97,6 +102,7 @@ def chat_assistant(req: AssistantRequest, session=Depends(get_session)):
             "session_id": req.session_id
         }
     except Exception as e:
+        logging.error(f"Direct assistant call failed: {e}")
         raise HTTPException(status_code=500, detail=f"Assistant failed: {str(e)}")
 
 

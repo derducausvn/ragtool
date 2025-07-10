@@ -5,8 +5,8 @@ import {
   MessageCircle, FileText, TrendingUp, Clock, X
 } from 'lucide-react';
 
-const API_BASE = process.env.REACT_APP_API_BASE;
-//const API_BASE = "http://127.0.0.1:8000"; // Local backend
+//const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE = "http://127.0.0.1:8000"; // Local backend
 
 // Custom Delete Confirmation Modal Component
 const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, itemTitle }) => {
@@ -394,24 +394,39 @@ const CustomerSupportAI = () => {
           });
           
           if (res.ok) {
+            const responseData = await res.json();
             successCount++;
-            uploadResults.push({ file: file.name, status: 'success' });
+            const message = responseData.converted_to_pdf 
+              ? `${file.name} (converted to PDF)` 
+              : file.name;
+            uploadResults.push({ file: message, status: 'success' });
           } else {
             errorCount++;
-            const errorData = await res.json().catch(() => ({ detail: 'Upload failed' }));
-            uploadResults.push({ file: file.name, status: 'error', error: errorData.detail });
+            let errorMessage = 'Upload failed';
+            try {
+              const errorData = await res.json();
+              errorMessage = errorData.detail || errorMessage;
+            } catch (parseError) {
+              errorMessage = `HTTP ${res.status}: ${res.statusText}`;
+            }
+            uploadResults.push({ file: file.name, status: 'error', error: errorMessage });
           }
         } catch (err) {
           errorCount++;
-          uploadResults.push({ file: file.name, status: 'error', error: 'Network error' });
+          uploadResults.push({ file: file.name, status: 'error', error: `Network error: ${err.message}` });
         }
       }
       
       // Set status based on results
       if (errorCount === 0) {
+        const hasConversions = uploadResults.some(result => result.file.includes('converted to PDF'));
+        let message = `All ${successCount} file(s) uploaded successfully!`;
+        if (hasConversions) {
+          message += ' Excel files were automatically converted to PDF for better compatibility.';
+        }
         setKnowledgeUploadStatus({ 
           type: 'success', 
-          message: `All ${successCount} file(s) uploaded successfully!` 
+          message: message
         });
         setKnowledgeFiles([]); // Clear the selected files
         // Clear the file input
@@ -568,7 +583,7 @@ const CustomerSupportAI = () => {
     if (knowledgeUploadStatus?.type === 'success') {
       const timer = setTimeout(() => {
         setKnowledgeUploadStatus(null);
-      }, 5000); // Clear after 5 seconds
+      }, 1000); // Clear after 5 seconds
       return () => clearTimeout(timer);
     }
   }, [knowledgeUploadStatus]);
@@ -880,17 +895,18 @@ const CustomerSupportAI = () => {
                 {chatHistory.map((msg, i) => (
                   <div
                     key={i}
-                    className={`text-sm max-w-[75%] px-4 py-2 rounded-xl ${
+                    className={`text-sm w-fit max-w-[75%] px-4 py-2 rounded-xl ${
                       msg.role === 'user'
                         ? 'ml-auto bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white'
                         : 'bg-white text-gray-800 border border-gray-200'
                     }`}
+                    style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5' }}
                   >
                     {msg.content}
                   </div>
                 ))}
                 {isLoading && (
-                  <div className="bg-gray-200 text-sm px-4 py-2 rounded-lg w-max animate-pulse">...</div>
+                  <div className="bg-gray-200 text-sm px-4 py-2 rounded-lg w-fit animate-pulse">...</div>
                 )}
                 <div ref={chatEndRef} />
               </div>
@@ -1021,12 +1037,12 @@ const CustomerSupportAI = () => {
                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-6">
                   <Upload className="mx-auto w-10 h-10 text-gray-400 mb-2" />
                   <p className="text-center text-gray-600 mb-4">Upload documents to the knowledge base</p>
-                  <p className="text-xs text-gray-400 text-center mb-4">Supported formats: PDF, DOCX, TXT</p>
+                  <p className="text-xs text-gray-400 text-center mb-4">Supported formats: XLSX, PDF, DOCX, TXT</p>
                   
                   <div className="flex flex-col items-center gap-3">
                     <input
                       type="file"
-                      accept=".pdf,.docx,.txt"
+                      accept=".pdf,.docx,.xlsx,.txt"
                       id="knowledge-upload-input"
                       className="hidden"
                       onChange={handleKnowledgeFileUpload}
