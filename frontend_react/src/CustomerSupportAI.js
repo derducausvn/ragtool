@@ -9,12 +9,9 @@ import useAppState from "./hooks/useAppState";
 import useApiHandlers from "./hooks/useApiHandlers";
 import { formatFileSize, formatUploadDate } from "./utils/formatters";
 
-// Flexible API base URL for different environments
-const API_BASE = process.env.REACT_APP_API_BASE || 
-  (process.env.NODE_ENV === 'production' 
-    ? 'https://ragtool-backend.onrender.com'  // Your Render backend URL
-    : 'http://127.0.0.1:8000'  // Local development
-  );
+// API Base URL - Comment/uncomment as needed
+//const API_BASE = 'http://127.0.0.1:8000';  // Local development
+const API_BASE = 'https://ragtool-backend.onrender.com';  // Render production
 
 const CustomerSupportAI = () => {
   // Use custom hooks for state management
