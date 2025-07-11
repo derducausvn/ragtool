@@ -9,6 +9,7 @@ import tempfile
 import time
 import requests
 import logging
+import hashlib
 import openai  # Add openai import for helper functions
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
@@ -70,6 +71,101 @@ def add_file_to_openai_assistant_vector_store(file_id: str, assistant_id: str = 
         logging.error(f"Failed to add file {file_id} to vector store: {e}")
         raise
 
+def get_vector_store_files():
+    """
+    Gets all files from the OpenAI vector store along with their metadata.
+    Returns a list of file dictionaries with id, filename, size, and created_at.
+    """
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY environment variable not set.")
+    
+    VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID")
+    if not VECTOR_STORE_ID:
+        raise ValueError("OPENAI_VECTOR_STORE_ID environment variable not set.")
+    
+    try:
+        # Get files from vector store
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        url = f"https://api.openai.com/v1/vector_stores/{VECTOR_STORE_ID}/files"
+        
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            raise Exception(f"Failed to get vector store files: {response.text}")
+        
+        vector_files = response.json().get("data", [])
+        
+        # Get detailed file information for each file
+        files_with_details = []
+        for vf in vector_files:
+            file_id = vf.get("id")
+            if file_id:
+                # Get file details from OpenAI files API
+                file_url = f"https://api.openai.com/v1/files/{file_id}"
+                file_resp = requests.get(file_url, headers=headers)
+                if file_resp.status_code == 200:
+                    file_data = file_resp.json()
+                    files_with_details.append({
+                        "id": file_id,
+                        "filename": file_data.get("filename", "Unknown"),
+                        "size": file_data.get("bytes", 0),
+                        "created_at": file_data.get("created_at", 0),
+                        "purpose": file_data.get("purpose", "assistants")
+                    })
+        
+        return files_with_details
+    except Exception as e:
+        logging.error(f"Failed to get vector store files: {e}")
+        raise
+
+def check_duplicate_file(filename: str, file_size: int):
+    """
+    Checks if a file with the same name and size already exists in the vector store.
+    Returns the existing file info if found, None otherwise.
+    """
+    try:
+        existing_files = get_vector_store_files()
+        for file_info in existing_files:
+            if (file_info["filename"] == filename and 
+                file_info["size"] == file_size):
+                return file_info
+        return None
+    except Exception as e:
+        logging.error(f"Error checking for duplicate file: {e}")
+        return None
+
+def delete_file_from_vector_store(file_id: str):
+    """
+    Removes a file from the vector store and deletes it from OpenAI storage.
+    """
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY environment variable not set.")
+    
+    VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID")
+    if not VECTOR_STORE_ID:
+        raise ValueError("OPENAI_VECTOR_STORE_ID environment variable not set.")
+    
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    
+    try:
+        # First, remove from vector store
+        vs_url = f"https://api.openai.com/v1/vector_stores/{VECTOR_STORE_ID}/files/{file_id}"
+        vs_resp = requests.delete(vs_url, headers=headers)
+        
+        if vs_resp.status_code not in [200, 204]:
+            logging.warning(f"Failed to remove file from vector store: {vs_resp.text}")
+        
+        # Then delete the file from OpenAI storage
+        file_url = f"https://api.openai.com/v1/files/{file_id}"
+        file_resp = requests.delete(file_url, headers=headers)
+        
+        if file_resp.status_code not in [200, 204]:
+            logging.warning(f"Failed to delete file from OpenAI storage: {file_resp.text}")
+        
+        return True
+    except Exception as e:
+        logging.error(f"Failed to delete file {file_id}: {e}")
+        raise
+
 # Utility function for safe file cleanup
 def safe_cleanup_error(file_path):
     """Cleanup file ignoring any errors (for error handling scenarios)."""
@@ -101,6 +197,7 @@ async def upload_knowledge_file(file: UploadFile = File(...)):
     """
     Uploads a file to OpenAI storage and attaches it to the vector store for retrieval using the REST API.
     Accepts any file type supported by OpenAI (pdf, docx, txt, etc.).
+    Checks for duplicates based on filename and size.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -109,11 +206,25 @@ async def upload_knowledge_file(file: UploadFile = File(...)):
     if not OPENAI_API_KEY or not VECTOR_STORE_ID:
         raise HTTPException(status_code=500, detail="OpenAI API key or Vector Store ID not configured.")
     try:
-        # Save file temporarily
+        # Save file temporarily to check size
         temp_dir = tempfile.gettempdir()
         temp_path = os.path.join(temp_dir, file.filename)
+        file_content = await file.read()
         with open(temp_path, "wb") as f_out:
-            f_out.write(await file.read())
+            f_out.write(file_content)
+        
+        # Get file size
+        file_size = len(file_content)
+        
+        # Check for duplicates
+        duplicate_file = check_duplicate_file(file.filename, file_size)
+        if duplicate_file:
+            safe_cleanup_error(temp_path)
+            return JSONResponse(content={
+                "message": f"File '{file.filename}' already exists in knowledge base (uploaded on {duplicate_file['created_at']}). Upload skipped.",
+                "duplicate": True,
+                "existing_file": duplicate_file
+            })
         
         # Check if file is Excel and convert to PDF if needed
         upload_file_path = temp_path
@@ -135,6 +246,12 @@ async def upload_knowledge_file(file: UploadFile = File(...)):
                 # Fall back to uploading original Excel file
                 upload_file_path = temp_path
                 converted_file = False
+        
+        # Check for duplicates before upload
+        file_size = os.path.getsize(upload_file_path)
+        duplicate_info = check_duplicate_file(file.filename, file_size)
+        if duplicate_info:
+            raise HTTPException(status_code=400, detail=f"Duplicate file detected: {duplicate_info['filename']} (ID: {duplicate_info['id']})")
         
         # 1. Upload file to OpenAI storage
         url = "https://api.openai.com/v1/files"
@@ -302,3 +419,38 @@ async def upload_website_content(payload: dict):
     except Exception as e:
         logging.error(f"Website upload failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Website upload failed: {str(e)}")
+
+@router.get("/knowledge-files")
+async def get_knowledge_files():
+    """
+    Returns a list of all files currently in the knowledge base vector store.
+    """
+    try:
+        files = get_vector_store_files()
+        # Sort by creation date (newest first)
+        files.sort(key=lambda x: x.get('created_at', 0), reverse=True)
+        return JSONResponse(content={
+            "files": files,
+            "total": len(files)
+        })
+    except Exception as e:
+        logging.error(f"Failed to get knowledge files: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get knowledge files: {str(e)}")
+
+@router.delete("/knowledge-files/{file_id}")
+async def delete_knowledge_file(file_id: str):
+    """
+    Deletes a file from the knowledge base vector store.
+    """
+    try:
+        success = delete_file_from_vector_store(file_id)
+        if success:
+            return JSONResponse(content={
+                "message": "File deleted successfully",
+                "file_id": file_id
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete file")
+    except Exception as e:
+        logging.error(f"Failed to delete file {file_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
