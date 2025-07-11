@@ -41,6 +41,19 @@ def parse_questionnaire_file(file_path: str) -> List[Document]:
             # Convert the table to a string for LLM
             table_str = df.to_string(index=False)
             content_for_llm = f"Extract all questions or prompts from the following table.\n\n{table_str}"
+        elif ext == "docx":
+            try:
+                from docx import Document as DocxDocument
+                doc = DocxDocument(file_path)
+                paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+                text = "\n".join(paragraphs)
+                content_for_llm = f"Extract all questions or prompts from the following text.\n\n{text}"
+            except ImportError:
+                logging.warning("python-docx is not installed. Cannot process DOCX files.")
+                return []
+            except Exception as e:
+                logging.error(f"Failed to parse DOCX file {file_path}: {e}")
+                return []
         else:
             # For unstructured files, extract text
             loader = UnstructuredLoader(file_path)

@@ -1,3 +1,4 @@
+
 """
 answer_questionnaire.py (Refactored)
 ------------------------------------
@@ -5,7 +6,6 @@ Handles file upload of questionnaires, parses questions, and returns generated a
 Supports Excel and unstructured formats. Saves session with Q&A results.
 Future-ready for user-level logging and extended analytics.
 """
-
 import os
 import tempfile
 import logging
