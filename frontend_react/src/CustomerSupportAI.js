@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Send, ArrowLeftToLine, ArrowRightToLine, Ellipsis, Upload, RefreshCw, Search, Bot,
-  MessageCircle, FileText, TrendingUp, Clock, X
+  MessageCircle, FileText, TrendingUp, Clock, X, Trash2
 } from 'lucide-react';
 
 // Flexible API base URL for different environments
@@ -95,6 +95,12 @@ const CustomerSupportAI = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [websiteScanStatus, setWebsiteScanStatus] = useState(null);
   const [crawlProgress, setCrawlProgress] = useState([]);
+  
+  // Knowledge Base file management states
+  const [uploadedKnowledgeFiles, setUploadedKnowledgeFiles] = useState([]);
+  const [showUploadedFiles, setShowUploadedFiles] = useState(false);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
 
   const [stats] = useState({
     totalQueries: 275,
@@ -118,6 +124,11 @@ const CustomerSupportAI = () => {
       .then(res => res.json())
       .then(data => setQuestionnaireList(data.history || []));
 
+    // Fetch knowledge base files when on knowledge page
+    if (currentPage === 'knowledge') {
+      fetchKnowledgeFiles();
+    }
+
     // Close menu on outside click (Portal-safe)
     const handleClickOutside = (event) => {
       if (
@@ -132,7 +143,7 @@ const CustomerSupportAI = () => {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, []);
+  }, [currentPage]);
     
   const startNewChat = () => {
     setActiveSessionId(null);     
@@ -416,10 +427,21 @@ const CustomerSupportAI = () => {
           if (res.ok) {
             const responseData = await res.json();
             successCount++;
-            const message = responseData.converted_to_pdf 
-              ? `${file.name} (converted to PDF)` 
-              : file.name;
-            uploadResults.push({ file: message, status: 'success' });
+            
+            if (responseData.duplicate) {
+              // Handle duplicate file
+              uploadResults.push({ 
+                file: file.name, 
+                status: 'duplicate',
+                message: responseData.message 
+              });
+            } else {
+              // Handle successful upload
+              const message = responseData.converted_to_pdf 
+                ? `${file.name} (converted to PDF)` 
+                : file.name;
+              uploadResults.push({ file: message, status: 'success' });
+            }
           } else {
             errorCount++;
             let errorMessage = 'Upload failed';
@@ -438,21 +460,40 @@ const CustomerSupportAI = () => {
       }
       
       // Set status based on results
+      const duplicateCount = uploadResults.filter(r => r.status === 'duplicate').length;
+      const actualSuccessCount = successCount - duplicateCount;
+      
       if (errorCount === 0) {
-        const hasConversions = uploadResults.some(result => result.file.includes('converted to PDF'));
-        let message = `All ${successCount} file(s) uploaded successfully!`;
+        const hasConversions = uploadResults.some(result => 
+          result.status === 'success' && result.file.includes('converted to PDF')
+        );
+        
+        let message;
+        if (duplicateCount === uploadResults.length) {
+          message = `All ${duplicateCount} file(s) were already in the knowledge base and skipped.`;
+        } else if (duplicateCount > 0) {
+          message = `${actualSuccessCount} file(s) uploaded successfully, ${duplicateCount} duplicate(s) skipped.`;
+        } else {
+          message = `All ${actualSuccessCount} file(s) uploaded successfully!`;
+        }
+        
         if (hasConversions) {
           message += ' Excel files were automatically converted to PDF for better compatibility.';
         }
+        
         setKnowledgeUploadStatus({ 
-          type: 'success', 
+          type: duplicateCount === uploadResults.length ? 'warning' : 'success', 
           message: message
         });
         setKnowledgeFiles([]); // Clear the selected files
         // Clear the file input
         const fileInput = document.getElementById('knowledge-upload-input');
         if (fileInput) fileInput.value = '';
-      } else if (successCount === 0) {
+        // Refresh the uploaded files list only if there were actual uploads
+        if (actualSuccessCount > 0) {
+          await fetchKnowledgeFiles();
+        }
+      } else if (actualSuccessCount === 0) {
         setKnowledgeUploadStatus({ 
           type: 'error', 
           message: `All ${errorCount} file(s) failed to upload.` 
@@ -460,7 +501,7 @@ const CustomerSupportAI = () => {
       } else {
         setKnowledgeUploadStatus({ 
           type: 'warning', 
-          message: `${successCount} file(s) uploaded successfully, ${errorCount} failed.` 
+          message: `${actualSuccessCount} file(s) uploaded successfully, ${errorCount} failed${duplicateCount > 0 ? `, ${duplicateCount} duplicate(s) skipped` : ''}.` 
         });
       }
       
@@ -519,6 +560,9 @@ const CustomerSupportAI = () => {
         });
         setWebsiteUrl(''); // Clear the URL input
         setMaxPages(''); // Clear the pages input
+        
+        // Refresh the uploaded files list
+        await fetchKnowledgeFiles();
         
         // Clear progress after a delay
         setTimeout(() => setCrawlProgress([]), 10000);
@@ -603,7 +647,7 @@ const CustomerSupportAI = () => {
     if (knowledgeUploadStatus?.type === 'success') {
       const timer = setTimeout(() => {
         setKnowledgeUploadStatus(null);
-      }, 10000); // Clear after 5 seconds
+      }, 10000); // Clear after 10 seconds
       return () => clearTimeout(timer);
     }
   }, [knowledgeUploadStatus]);
@@ -618,6 +662,70 @@ const CustomerSupportAI = () => {
     }
   }, [websiteScanStatus]);
 
+  const fetchKnowledgeFiles = async () => {
+    if (isLoadingFiles) return;
+    setIsLoadingFiles(true);
+    try {
+      const res = await fetch(`${API_BASE}/knowledge-files`);
+      if (res.ok) {
+        const data = await res.json();
+        setUploadedKnowledgeFiles(data.files || []);
+      } else {
+        console.error("Failed to fetch knowledge files:", res.statusText);
+      }
+    } catch (err) {
+      console.error("Error fetching knowledge files:", err);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  const handleDeleteKnowledgeFile = async (fileId, filename) => {
+    if (!confirm(`Are you sure you want to delete "${filename}" from the knowledge base?`)) {
+      return;
+    }
+    
+    setIsDeletingFile(true);
+    try {
+      const res = await fetch(`${API_BASE}/knowledge-files/${fileId}`, {
+        method: 'DELETE'
+      });
+      
+      if (res.ok) {
+        // Refresh the file list
+        await fetchKnowledgeFiles();
+        setKnowledgeUploadStatus({ 
+          type: 'success', 
+          message: `"${filename}" deleted successfully.` 
+        });
+      } else {
+        throw new Error(`Delete failed: ${res.statusText}`);
+      }
+    } catch (err) {
+      console.error("Delete error:", err);
+      setKnowledgeUploadStatus({ 
+        type: 'error', 
+        message: `Failed to delete "${filename}": ${err.message}` 
+      });
+    } finally {
+      setIsDeletingFile(false);
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const formatUploadDate = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    const date = new Date(timestamp * 1000); // OpenAI timestamps are in seconds
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  };
+    
   return (
     <div className="flex min-h-screen bg-[#f5f7fa] font-sans">
       {/* Delete Confirmation Modal */}
@@ -1222,6 +1330,86 @@ const CustomerSupportAI = () => {
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Uploaded Files Section */}
+              <div className="mt-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Uploaded Knowledge Files</h3>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={fetchKnowledgeFiles}
+                      disabled={isLoadingFiles}
+                      className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isLoadingFiles ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </button>
+                    <button
+                      onClick={() => setShowUploadedFiles(!showUploadedFiles)}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white btn-primary rounded-lg hover:shadow-md"
+                    >
+                      {showUploadedFiles ? 'Hide' : 'Show'} Uploaded Files
+                      <svg 
+                        className={`w-4 h-4 transition-transform ${showUploadedFiles ? 'rotate-180' : ''}`} 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {showUploadedFiles && (
+                  <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                    {isLoadingFiles ? (
+                      <div className="flex items-center justify-center py-8">
+                        <svg className="animate-spin h-6 w-6 text-blue-600" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l5-5-5-5v4a10 10 0 00-10 10h4z" />
+                        </svg>
+                        <span className="ml-2 text-gray-600">Loading files...</span>
+                      </div>
+                    ) : uploadedKnowledgeFiles.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <FileText className="mx-auto w-12 h-12 text-gray-300 mb-2" />
+                        <p>No files uploaded to knowledge base yet.</p>
+                        <p className="text-sm">Upload some documents above to get started.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="text-sm text-gray-600 mb-3">
+                          {uploadedKnowledgeFiles.length} file{uploadedKnowledgeFiles.length !== 1 ? 's' : ''} in knowledge base
+                        </div>
+                        {uploadedKnowledgeFiles.map((file, index) => (
+                          <div key={file.id || index} className="flex items-center justify-between bg-white p-3 rounded-lg border hover:shadow-sm transition-shadow">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-gray-900 truncate" title={file.filename}>
+                                  {file.filename}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                  {formatFileSize(file.size)} • Uploaded {formatUploadDate(file.created_at)}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteKnowledgeFile(file.id, file.filename)}
+                              disabled={isDeletingFile}
+                              className="ml-3 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                              title={`Delete ${file.filename}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
