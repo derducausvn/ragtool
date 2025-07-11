@@ -225,16 +225,32 @@ const CustomerSupportAI = () => {
         setActiveSessionId(sessionId);
       }
 
-      // Call backend endpoint that now uses OpenAI Assistant for answer generation
-      const res = await fetch(`${API_BASE}/chat/assistant`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          question: question,
-          session_id: sessionId 
-        })
-      });
-      const result = await res.json();
+      let res, result;
+
+      if (mode === 'F24 QA Expert') {
+        // F24 Expert mode: Use AI assistant with knowledge base
+        res = await fetch(`${API_BASE}/chat/assistant`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            question: question,
+            session_id: sessionId 
+          })
+        });
+        result = await res.json();
+      } else {
+        // General Chat mode: Use direct OpenAI GPT-3.5 Turbo
+        res = await fetch(`${API_BASE}/chat/general`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            question: question,
+            session_id: sessionId 
+          })
+        });
+        result = await res.json();
+      }
+
       const reply = {
         role: 'assistant',
         content: result.answer || 'No answer returned.',
@@ -618,7 +634,7 @@ const CustomerSupportAI = () => {
         <div className="flex items-center justify-between mb-4">
           {!sidebarCollapsed && (
             <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg text-white bg-gradient-to-r from-[#00B4F1] to-[#0077C8]">
+              <div className="p-2 rounded-lg text-white btn-primary">
                 <Bot className="w-5 h-5" />
               </div>
               <div>
@@ -657,7 +673,7 @@ const CustomerSupportAI = () => {
                   disabled={isUploadingKnowledge || isScanning}
                   className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition ${
                     currentPage === item.id
-                      ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white'
+                      ? 'btn-primary text-white'
                       : (isUploadingKnowledge || isScanning)
                         ? 'text-gray-400 cursor-not-allowed'
                         : 'text-gray-600 hover:bg-gray-100'
@@ -874,7 +890,7 @@ const CustomerSupportAI = () => {
                       onClick={() => setMode(m)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                         mode === m
-                          ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white shadow'
+                          ? 'btn-primary text-white shadow'
                           : 'bg-white border border-gray-300 text-gray-600 hover:border-[#00B4F1]'
                       }`}
                     >
@@ -901,7 +917,7 @@ const CustomerSupportAI = () => {
                     key={i}
                     className={`text-sm w-fit max-w-[75%] px-4 py-2 rounded-xl ${
                       msg.role === 'user'
-                        ? 'ml-auto bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white'
+                        ? 'ml-auto btn-primary text-white'
                         : 'bg-white text-gray-800 border border-gray-200'
                     }`}
                     style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5' }}
@@ -920,7 +936,7 @@ const CustomerSupportAI = () => {
                 <button
                   onClick={startNewChat}
                   title="Start a new chat session"
-                  className="flex items-center gap-2 text-sm font-medium text-white bg-gradient-to-r from-[#00B4F1] to-[#0077C8] px-4 py-2 rounded-lg hover:shadow-md whitespace-nowrap"
+                  className="flex items-center gap-2 text-sm font-medium text-white btn-primary px-4 py-2 rounded-lg hover:shadow-md whitespace-nowrap"
                 >
                   <Bot className="w-4 h-4" />
                   New Chat
@@ -938,7 +954,7 @@ const CustomerSupportAI = () => {
                 <button
                   onClick={handleSendMessage}
                   disabled={!userInput.trim()}
-                  className="bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white px-4 py-2 rounded-lg hover:shadow-md disabled:opacity-50"
+                  className="btn-primary text-white px-4 py-2 rounded-lg hover:shadow-md disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -974,8 +990,8 @@ const CustomerSupportAI = () => {
                   htmlFor="questionnaire-upload-input" 
                   className={`inline-block text-white px-6 py-2 rounded-lg cursor-pointer transition ${
                     isProcessing 
-                      ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] opacity-50 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] hover:shadow-md'
+                      ? 'btn-primary-disabled' 
+                      : 'btn-primary-hover'
                   }`}
                 >
                   Choose File to Upload
@@ -1000,8 +1016,8 @@ const CustomerSupportAI = () => {
                     disabled={isProcessing}
                     className={`flex items-center gap-2 text-white px-6 py-2 rounded-lg transition ${
                       isProcessing 
-                        ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] opacity-60 cursor-not-allowed' 
-                        : 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] hover:shadow-md'
+                        ? 'btn-primary-disabled opacity-60' 
+                        : 'btn-primary-hover'
                     }`}
                   >
                     {isProcessing && (
@@ -1057,8 +1073,8 @@ const CustomerSupportAI = () => {
                       htmlFor="knowledge-upload-input" 
                       className={`inline-block text-white px-6 py-2 rounded-lg cursor-pointer transition ${
                         isUploadingKnowledge 
-                          ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] opacity-50 cursor-not-allowed' 
-                          : 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] hover:shadow-md'
+                          ? 'btn-primary-disabled' 
+                          : 'btn-primary-hover'
                       }`}
                     >
                       Choose File to Upload
@@ -1085,8 +1101,8 @@ const CustomerSupportAI = () => {
                         disabled={isUploadingKnowledge}
                         className={`flex items-center gap-2 text-white px-6 py-2 rounded-lg transition ${
                           isUploadingKnowledge 
-                            ? 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] opacity-60 cursor-not-allowed' 
-                            : 'bg-gradient-to-r from-[#00B4F1] to-[#0077C8] hover:shadow-md'
+                            ? 'btn-primary-disabled opacity-60' 
+                            : 'btn-primary-hover'
                         }`}
                       >
                         {isUploadingKnowledge && (
@@ -1159,7 +1175,7 @@ const CustomerSupportAI = () => {
                       <button
                         onClick={handleWebsiteScan}
                         disabled={isScanning}
-                        className={`flex items-center gap-2 px-6 py-2 rounded-lg transition whitespace-nowrap bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white hover:shadow-md ${
+                        className={`flex items-center gap-2 px-6 py-2 rounded-lg transition whitespace-nowrap btn-primary text-white hover:shadow-md ${
                           isScanning ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                       >

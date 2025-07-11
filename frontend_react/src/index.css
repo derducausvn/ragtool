@@ -15,3 +15,18 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Custom utility classes */
+@layer utilities {
+  .btn-primary {
+    @apply bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white;
+  }
+  
+  .btn-primary-disabled {
+    @apply bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white opacity-50 cursor-not-allowed;
+  }
+  
+  .btn-primary-hover {
+    @apply bg-gradient-to-r from-[#00B4F1] to-[#0077C8] text-white hover:shadow-md;
+  }
+}

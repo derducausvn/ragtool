@@ -8,14 +8,67 @@ import os
 import tempfile
 import time
 import requests
+import logging
+import openai  # Add openai import for helper functions
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from web_utils import crawl_static_links
 from bs4 import BeautifulSoup
 from excel_to_pdf_converter import convert_excel_for_knowledge_base, is_excel_file
-import logging
 
 router = APIRouter()
+
+# OpenAI Configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Helper functions moved from openai_integration.py
+def upload_file_to_openai_storage(file_path: str, purpose: str = "assistants") -> str:
+    """
+    Uploads a file to OpenAI's file storage for use with Assistants.
+    Returns the OpenAI file ID on success, or raises an exception on failure.
+    """
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY environment variable not set.")
+    openai.api_key = OPENAI_API_KEY
+    try:
+        with open(file_path, "rb") as f:
+            response = openai.files.create(file=f, purpose=purpose)
+        file_id = response.id
+        logging.info(f"Uploaded {file_path} to OpenAI storage with file_id: {file_id}")
+        return file_id
+    except Exception as e:
+        logging.error(f"Failed to upload {file_path} to OpenAI storage: {e}")
+        raise
+
+def add_file_to_openai_assistant_vector_store(file_id: str, assistant_id: str = None) -> str:
+    """
+    Attaches a file to the central OpenAI vector store for retrieval by the assistant.
+    Returns the Assistant ID.
+    """
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY environment variable not set.")
+    openai.api_key = OPENAI_API_KEY
+    VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID")
+    if not VECTOR_STORE_ID:
+        raise ValueError("OPENAI_VECTOR_STORE_ID environment variable not set.")
+    try:
+        # Attach file to the central vector store (not just a thread)
+        openai.beta.vector_stores.files.create(
+            vector_store_id=VECTOR_STORE_ID,
+            file_id=file_id
+        )
+        logging.info(f"Attached file {file_id} to vector store {VECTOR_STORE_ID}.")
+        # Optionally, update the assistant to use this vector store if not already
+        if assistant_id is not None:
+            openai.beta.assistants.update(
+                assistant_id=assistant_id,
+                tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}}
+            )
+            logging.info(f"Ensured assistant {assistant_id} uses vector store {VECTOR_STORE_ID}.")
+        return assistant_id
+    except Exception as e:
+        logging.error(f"Failed to add file {file_id} to vector store: {e}")
+        raise
 
 # Utility function for safe file cleanup
 def safe_cleanup_error(file_path):
@@ -148,7 +201,7 @@ async def upload_website_content(payload: dict):
     Crawls up to `max_pages` from the given URL's domain, aggregates main text, and uploads to OpenAI vector store.
     """
     url = payload.get("url")
-    max_pages = payload.get("max_pages", 5)
+    max_pages = payload.get("max_pages", 10)
     
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
@@ -157,54 +210,95 @@ async def upload_website_content(payload: dict):
     VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID")
     if not OPENAI_API_KEY or not VECTOR_STORE_ID:
         raise HTTPException(status_code=500, detail="OpenAI API key or Vector Store ID not configured.")
+    
     try:
-        # Crawl up to max_pages from the domain
-        urls = crawl_static_links(url, max_pages=max_pages)
-        if not urls:
-            raise HTTPException(status_code=400, detail="Could not fetch the website or no content found.")
-        all_text = []
-        for idx, page_url in enumerate(urls, 1):
-            resp = requests.get(page_url, timeout=15, headers={
-                'User-Agent': 'Mozilla/5.0 (compatible; Knowledge-Bot/1.0)'
-            })
-            if resp.status_code != 200:
-                continue  # skip failed pages
-            soup = BeautifulSoup(resp.text, "html.parser")
-            text = soup.get_text(separator="\n", strip=True)
-            if text and len(text) >= 100:
-                all_text.append(f"\n--- PAGE {idx}: {page_url} ---\n{text}")
-        if not all_text:
-            raise HTTPException(status_code=400, detail="No usable content extracted from crawled pages.")
-        combined_text = "\n\n".join(all_text)
-        # Save to temp file
+        # Crawl the website
+        logging.info(f"Starting website crawl for {url}, max_pages={max_pages}")
+        all_links = crawl_static_links(url, max_pages=max_pages)
+        
+        if not all_links:
+            raise HTTPException(status_code=400, detail="No content found at the provided URL")
+        
+        # Aggregate all page content
+        full_content = ""
+        for page_url in all_links:
+            try:
+                # Fetch content from each URL
+                logging.info(f"Fetching content from {page_url}")
+                response = requests.get(page_url, timeout=15, headers={
+                    'User-Agent': 'Mozilla/5.0 (compatible; Knowledge-Bot/1.0)'
+                })
+                if response.status_code == 200:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    
+                    # Remove script and style elements
+                    for script in soup(["script", "style"]):
+                        script.decompose()
+                    
+                    # Get text content
+                    page_content = soup.get_text()
+                    
+                    # Clean up whitespace
+                    lines = (line.strip() for line in page_content.splitlines())
+                    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                    page_content = ' '.join(chunk for chunk in chunks if chunk)
+                    
+                    if page_content.strip():
+                        full_content += f"\n\n--- Content from {page_url} ---\n{page_content}"
+                else:
+                    logging.warning(f"Failed to fetch {page_url}: HTTP {response.status_code}")
+            except Exception as e:
+                logging.error(f"Error fetching content from {page_url}: {str(e)}")
+                continue
+        
+        # Check if we got any content
+        if not full_content.strip():
+            raise HTTPException(status_code=400, detail="No readable content found from the crawled pages")
+        
+        # Create a temporary text file
         temp_dir = tempfile.gettempdir()
-        safe_name = f"website_{int(time.time())}_multi.txt"
-        temp_path = os.path.join(temp_dir, safe_name)
-        with open(temp_path, "w", encoding="utf-8") as f_out:
-            f_out.write(combined_text)
+        temp_filename = f"website_content_{int(time.time())}.txt"
+        temp_path = os.path.join(temp_dir, temp_filename)
+        
+        with open(temp_path, "w", encoding="utf-8") as f:
+            f.write(full_content)
+        
         # Upload to OpenAI
-        url_api = "https://api.openai.com/v1/files"
+        url_upload = "https://api.openai.com/v1/files"
         headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
         with open(temp_path, "rb") as f_in:
             files = {"file": f_in, "purpose": (None, "assistants")}
-            resp = requests.post(url_api, headers=headers, files=files)
+            resp = requests.post(url_upload, headers=headers, files=files)
+        
         if resp.status_code != 200:
-            os.remove(temp_path)
+            safe_cleanup_error(temp_path)
             raise HTTPException(status_code=500, detail=f"OpenAI file upload failed: {resp.text}")
+        
         file_id = resp.json()["id"]
+        
         # Attach to vector store
-        url2 = f"https://api.openai.com/v1/vector_stores/{VECTOR_STORE_ID}/files"
+        url_attach = f"https://api.openai.com/v1/vector_stores/{VECTOR_STORE_ID}/files"
         data = {"file_id": file_id}
-        resp2 = requests.post(url2, headers=headers, json=data)
-        os.remove(temp_path)
+        resp2 = requests.post(url_attach, headers=headers, json=data)
+        
         if resp2.status_code != 200:
+            safe_cleanup_error(temp_path)
             raise HTTPException(status_code=500, detail=f"OpenAI vector store attach failed: {resp2.text}")
+        
+        # Cleanup
+        safe_cleanup_with_retry(temp_path)
+        
         return JSONResponse(content={
-            "message": f"Website content from {len(all_text)} pages uploaded and attached to vector store.",
+            "message": f"Successfully crawled and uploaded content from {len(all_links)} pages",
             "file_id": file_id,
             "vector_store_id": VECTOR_STORE_ID,
-            "pages_crawled": len(all_text),
-            "source_urls": urls
+            "pages_crawled": len(all_links),
+            "source_url": url
         })
+        
+    except HTTPException:
+        raise
     except Exception as e:
+        logging.error(f"Website upload failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Website upload failed: {str(e)}")

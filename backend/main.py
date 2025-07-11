@@ -5,6 +5,8 @@ FastAPI application entry point for OpenAI Assistant-based RAG system.
 """
 
 import os
+import logging
+import openai
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -30,9 +32,11 @@ app = FastAPI(title="RAG Agent", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "https://f24questionnaire.vercel.app",
-        "https://f24questionnaire-git-main-ducs-projects.vercel.app"
+        "http://localhost:3000",                              # Local development
+        "http://127.0.0.1:3000",                             # Local development alt
+        "https://f24questionnaire.vercel.app",               # Vercel production
+        "https://f24questionnaire-git-main-ducs-projects.vercel.app",  # Vercel preview
+        "https://ragtool-frontend.onrender.com",             # Render frontend (replace with actual URL)
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -74,8 +78,6 @@ def get_all_chat_sessions():
 @app.post("/chat/assistant")
 def chat_assistant(req: AssistantRequest, session=Depends(get_session)):
     try:
-        import logging
-        import os
         from openai_integration import query_openai_assistant
         
         ASSISTANT_ID = os.getenv("OPENAI_RAG_ASSISTANT_ID")
@@ -104,6 +106,49 @@ def chat_assistant(req: AssistantRequest, session=Depends(get_session)):
     except Exception as e:
         logging.error(f"Direct assistant call failed: {e}")
         raise HTTPException(status_code=500, detail=f"Assistant failed: {str(e)}")
+
+# --- General Chat API (Direct GPT-3.5 Turbo) ---
+@app.post("/chat/general")
+def chat_general(req: AssistantRequest, session=Depends(get_session)):
+    try:
+        # Set up OpenAI client
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        if not openai.api_key:
+            raise HTTPException(status_code=500, detail="OpenAI API key not configured")
+        
+        logging.info(f"General chat call for question: {req.question[:50]}...")
+        
+        # Call OpenAI GPT-3.5 Turbo directly without knowledge base
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful AI assistant. Provide clear, accurate, and helpful responses to user questions."},
+                {"role": "user", "content": req.question}
+            ],
+            max_tokens=1000,
+            temperature=0.7
+        )
+        
+        answer = response.choices[0].message.content.strip()
+        
+        logging.info(f"General chat answer generated: {answer[:100]}...")
+        
+        # If session_id is provided, save the conversation to the database
+        if req.session_id:
+            # Save user message
+            save_message(req.session_id, "user", req.question)
+            # Save assistant response
+            save_message(req.session_id, "assistant", answer)
+            
+        return {
+            "question": req.question,
+            "answer": answer,
+            "session_id": req.session_id,
+            "sources": []  # No sources for general chat
+        }
+    except Exception as e:
+        logging.error(f"General chat call failed: {e}")
+        raise HTTPException(status_code=500, detail=f"General chat failed: {str(e)}")
 
 
 # --- PLACEHOLDERS ---
