@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
-import SidebarHeader from "./components/SidebarHeader";
-import NavigationMenu from "./components/NavigationMenu";
 import AppSidebar from "./components/AppSidebar";
 import DashboardPage from "./components/DashboardPage";
 import { ChatPage, QuestionnairePage, KnowledgePage } from "./components/PageComponents";
@@ -201,50 +199,37 @@ const CustomerSupportAI = () => {
 
       {/* Sidebar Wrapper */}
       <div className={`transition-all duration-300 ${state.sidebarCollapsed ? 'w-16' : 'w-64'} bg-white shadow-lg p-2 border-r text-sm flex flex-col relative overflow-hidden`}>
-        <SidebarHeader 
+        <AppSidebar 
           sidebarCollapsed={state.sidebarCollapsed}
           setSidebarCollapsed={state.setSidebarCollapsed}
+          currentPage={state.currentPage}
+          setCurrentPage={state.setCurrentPage}
+          isUploadingKnowledge={state.isUploadingKnowledge}
+          isScanning={state.isScanning}
+          chatList={state.chatList}
+          questionnaireList={state.questionnaireList}
+          showAllChats={state.showAllChats}
+          showAllQuestionnaires={state.showAllQuestionnaires}
+          setShowAllChats={state.setShowAllChats}
+          setShowAllQuestionnaires={state.setShowAllQuestionnaires}
+          renamingId={state.renamingId}
+          renamingQuestionnaireId={state.renamingQuestionnaireId}
+          renameInput={state.renameInput}
+          renameQuestionnaireInput={state.renameQuestionnaireInput}
+          setRenameInput={state.setRenameInput}
+          setRenameQuestionnaireInput={state.setRenameQuestionnaireInput}
+          menuOpenId={state.menuOpenId}
+          dropdownPosition={state.dropdownPosition}
+          setDropdownPosition={state.setDropdownPosition}
+          setMenuOpenId={state.setMenuOpenId}
+          handleSelectChat={apiHandlers.handleSelectChat}
+          handleSelectQuestionnaire={apiHandlers.handleSelectQuestionnaire}
+          handleRenameChat={apiHandlers.handleRenameChat}
+          handleRenameQuestionnaire={apiHandlers.handleRenameQuestionnaire}
+          setRenamingId={state.setRenamingId}
+          setRenamingQuestionnaireId={state.setRenamingQuestionnaireId}
+          openDeleteModal={openDeleteModal}
         />
-
-        {/* Full Content Only When Expanded */}
-        {!state.sidebarCollapsed && (
-          <div className="flex flex-col gap-4">
-            <NavigationMenu
-              currentPage={state.currentPage}
-              setCurrentPage={state.setCurrentPage}
-              isUploadingKnowledge={state.isUploadingKnowledge}
-              isScanning={state.isScanning}
-            />
-
-            <AppSidebar 
-              sidebarCollapsed={state.sidebarCollapsed}
-              currentPage={state.currentPage}
-              chatList={state.chatList}
-              questionnaireList={state.questionnaireList}
-              showAllChats={state.showAllChats}
-              showAllQuestionnaires={state.showAllQuestionnaires}
-              setShowAllChats={state.setShowAllChats}
-              setShowAllQuestionnaires={state.setShowAllQuestionnaires}
-              renamingId={state.renamingId}
-              renamingQuestionnaireId={state.renamingQuestionnaireId}
-              renameInput={state.renameInput}
-              renameQuestionnaireInput={state.renameQuestionnaireInput}
-              setRenameInput={state.setRenameInput}
-              setRenameQuestionnaireInput={state.setRenameQuestionnaireInput}
-              menuOpenId={state.menuOpenId}
-              dropdownPosition={state.dropdownPosition}
-              setDropdownPosition={state.setDropdownPosition}
-              setMenuOpenId={state.setMenuOpenId}
-              handleSelectChat={apiHandlers.handleSelectChat}
-              handleSelectQuestionnaire={apiHandlers.handleSelectQuestionnaire}
-              handleRenameChat={apiHandlers.handleRenameChat}
-              handleRenameQuestionnaire={apiHandlers.handleRenameQuestionnaire}
-              setRenamingId={state.setRenamingId}
-              setRenamingQuestionnaireId={state.setRenamingQuestionnaireId}
-              openDeleteModal={openDeleteModal}
-            />
-          </div>
-        )}
       </div>
 
       {/* Main content */}
