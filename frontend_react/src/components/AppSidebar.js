@@ -45,7 +45,7 @@ const AppSidebar = ({
             </div>
             <div>
               <h1 className="text-base font-bold text-[#00B4F1] leading-none">F24 AI Assistant</h1>
-              <p className="text-xs text-gray-400">Chatbot for Questionnaires</p>
+              <p className="text-xs text-gray-400">Knowledge-based Assistant</p>
             </div>
           </div>
         )}

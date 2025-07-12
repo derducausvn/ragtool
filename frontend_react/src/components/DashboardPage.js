@@ -12,7 +12,7 @@ const DashboardPage = ({
       title: 'Chat Sessions',
       value: chatList.length,
       icon: MessageCircle,
-      color: 'bg-blue-500',
+      gradient: 'from-blue-400 via-blue-500 to-cyan-400',
       action: () => setCurrentPage('chat'),
       description: 'Active chat conversations'
     },
@@ -20,7 +20,7 @@ const DashboardPage = ({
       title: 'Questionnaires',
       value: questionnaireList.length,
       icon: FileText,
-      color: 'bg-green-500',
+      gradient: 'from-green-400 via-green-500 to-emerald-400',
       action: () => setCurrentPage('questionnaire'),
       description: 'Processed questionnaires'
     },
@@ -28,7 +28,7 @@ const DashboardPage = ({
       title: 'Knowledge Files',
       value: uploadedKnowledgeFiles.length,
       icon: Database,
-      color: 'bg-purple-500',
+      gradient: 'from-purple-400 via-purple-500 to-fuchsia-400',
       action: () => setCurrentPage('knowledge'),
       description: 'Knowledge base documents'
     }
@@ -78,7 +78,7 @@ const DashboardPage = ({
                   <p className="text-2xl font-bold text-gray-900 group-hover:text-[#00B4F1] transition">{stat.value}</p>
                   <p className="text-xs text-gray-500 mt-1">{stat.description}</p>
                 </div>
-                <div className={`w-10 h-10 ${stat.color} rounded-lg flex items-center justify-center`}>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center bg-gradient-to-br ${stat.gradient}`}>
                   <stat.icon className="w-5 h-5 text-white" />
                 </div>
               </div>

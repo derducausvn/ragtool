@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import LoginForm from "./components/LoginForm";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
 import AppSidebar from "./components/AppSidebar";
 import DashboardPage from "./components/DashboardPage";
@@ -13,10 +14,15 @@ const API_BASE = 'http://127.0.0.1:8000';  // Local development
 //const API_BASE = 'https://ragtool-backend.onrender.com';  // Render production
 
 const CustomerSupportAI = () => {
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginError, setLoginError] = useState(null);
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+
   // Use custom hooks for state management
   const state = useAppState();
   const chatEndRef = useRef(null);
-  
+
   // Knowledge file manager hook
   const {
     fileToDelete,
@@ -32,6 +38,29 @@ const CustomerSupportAI = () => {
   // Handle knowledge file deletion with modal
   const handleKnowledgeFileDelete = (fileId, filename) => {
     handleDeleteKnowledgeFile(fileId, filename);
+  };
+
+
+  // Basic login handler (replace with Microsoft login later)
+  const handleLogin = (form) => {
+    // Simple hardcoded check for demo; replace with real backend or Microsoft login
+    if (form.username === 'f24' && form.password === 'f24') {
+      setIsAuthenticated(true);
+      setLoginError(null);
+    } else {
+      setLoginError('Invalid username or password');
+    }
+  };
+
+  // Placeholder for future Microsoft login integration
+  const handleMicrosoftLogin = () => {
+    // TODO: Integrate Microsoft authentication here
+    alert('Microsoft login integration coming soon!');
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setLoginForm({ username: '', password: '' });
   };
 
   const confirmKnowledgeFileDelete = async () => {
@@ -177,6 +206,19 @@ const CustomerSupportAI = () => {
     state.setShowAllQuestionnaires(false);
   }, [state.currentPage]);
 
+
+  // If not authenticated, show login form
+  if (!isAuthenticated) {
+    return (
+      <LoginForm
+        onLogin={handleLogin}
+        onMicrosoftLogin={handleMicrosoftLogin}
+        error={loginError}
+      />
+    );
+  }
+
+  // Main app UI (only visible if authenticated)
   return (
     <div className="flex min-h-screen bg-[#f5f7fa] font-sans">
       {/* Delete Confirmation Modal */}

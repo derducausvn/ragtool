@@ -3,7 +3,7 @@ models.py (Refactored)
 ----------------------
 Defines database schema for chat and questionnaire sessions.
 Uses SQLModel for fast ORM-like access. Ready for expansion (user ID, tags, etc.).
-
+add_mode_column_to_chatme
 Models:
 - ChatSession: groups messages by conversation
 - ChatMessage: stores role/content/timestamp
@@ -28,6 +28,7 @@ class ChatMessage(SQLModel, table=True):
     session_id: int = Field(foreign_key="chatsession.id")
     role: str  # "user" or "assistant"
     content: str
+    mode: Optional[str] = Field(default=None, description="Chat mode: F24 QA Expert or General Chat")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     session: Optional[ChatSession] = Relationship(back_populates="messages")

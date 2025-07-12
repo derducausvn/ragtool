@@ -123,8 +123,8 @@ def chat_assistant(req: AssistantRequest, session=Depends(get_session)):
         
         # Save to database if session provided
         if req.session_id:
-            save_message(req.session_id, "user", req.question)
-            save_message(req.session_id, "assistant", answer)
+            save_message(req.session_id, "user", req.question, "F24 QA Expert")
+            save_message(req.session_id, "assistant", answer, "F24 QA Expert")
             
         return {
             "question": req.question,
@@ -163,8 +163,8 @@ def chat_general(req: AssistantRequest, session=Depends(get_session)):
         
         # Save to database if session provided
         if req.session_id:
-            save_message(req.session_id, "user", req.question)
-            save_message(req.session_id, "assistant", answer)
+            save_message(req.session_id, "user", req.question, "General Chat")
+            save_message(req.session_id, "assistant", answer, "General Chat")
             
         return {
             "question": req.question,

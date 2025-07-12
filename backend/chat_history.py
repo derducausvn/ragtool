@@ -29,7 +29,8 @@ def save_chat(payload: dict, session=Depends(get_session)):
         session.add(ChatMessage(
             session_id=new_chat.id,
             role=msg["role"],
-            content=msg["content"]
+            content=msg["content"],
+            mode=msg.get("mode")
         ))
     session.commit()
 
@@ -87,7 +88,9 @@ def get_chat_history(session_id: int):
         messages = session.exec(
             select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.timestamp)
         ).all()
-        return [{"role": m.role, "content": m.content} for m in messages]
+        return [
+            {"role": m.role, "content": m.content, "mode": m.mode} for m in messages
+        ]
     finally:
         session.close()
 
@@ -101,10 +104,10 @@ def list_sessions():
         session.close()
 
 # --- Utility: Save single message ---
-def save_message(session_id: int, role: str, content: str):
+def save_message(session_id: int, role: str, content: str, mode: str = None):
     session = Session(engine)
     try:
-        msg = ChatMessage(session_id=session_id, role=role, content=content)
+        msg = ChatMessage(session_id=session_id, role=role, content=content, mode=mode)
         session.add(msg)
         session.commit()
     except Exception:

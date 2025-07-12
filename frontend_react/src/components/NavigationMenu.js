@@ -10,7 +10,7 @@ const NavigationMenu = ({
   const menuItems = [
     { id: 'dashboard', icon: Home, label: 'Dashboard' },
     { id: 'chat', icon: MessageCircle, label: 'Chat & Ask' },
-    { id: 'questionnaire', icon: FileText, label: 'Customer Questionnaires' },
+    { id: 'questionnaire', icon: FileText, label: 'Questionnaires Bulk Answer' },
     { id: 'knowledge', icon: Upload, label: 'Knowledge Base' }
   ];
 

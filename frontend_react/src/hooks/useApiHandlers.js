@@ -84,7 +84,8 @@ const useApiHandlers = (API_BASE, state) => {
       const reply = {
         role: 'assistant',
         content: result.answer || 'No answer returned.',
-        sources: result.sources || []
+        sources: result.sources || [],
+        mode: mode // Track which mode generated this message
       };
       setChatHistoryState(prev => [...prev, reply]);
       
@@ -95,7 +96,8 @@ const useApiHandlers = (API_BASE, state) => {
       const errMsg = {
         role: 'assistant',
         content: 'Error fetching answer.',
-        sources: []
+        sources: [],
+        mode: mode
       };
       setChatHistoryState(prev => [...prev, errMsg]);
     } finally {

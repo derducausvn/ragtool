@@ -53,16 +53,22 @@ const ChatPage = ({
             </div>
           )}
           {chatHistory.map((msg, i) => (
-            <div
-              key={i}
-              className={`text-sm w-fit max-w-[75%] px-4 py-2 rounded-xl ${
-                msg.role === 'user'
-                  ? 'ml-auto btn-primary text-white'
-                  : 'bg-white text-gray-800 border border-gray-200'
-              }`}
-              style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5' }}
-            >
-              {msg.content}
+            <div key={i} className="space-y-0.5">
+              <div
+                className={`text-sm w-fit max-w-[75%] px-4 py-2 rounded-xl ${
+                  msg.role === 'user'
+                    ? 'ml-auto btn-primary text-white'
+                    : 'bg-white text-gray-800 border border-gray-200'
+                }`}
+                style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5' }}
+              >
+                {msg.content}
+              </div>
+              {msg.role !== 'user' && (msg.mode || msg.mode === '') && (
+                <div className="text-xs text-gray-400 mt-0.5 ml-1">
+                  {msg.mode === 'F24 QA Expert' ? 'Expert Mode' : 'General Mode'}
+                </div>
+              )}
             </div>
           ))}
           {isLoading && (
