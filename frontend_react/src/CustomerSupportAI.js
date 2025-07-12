@@ -10,8 +10,8 @@ import useApiHandlers from "./hooks/useApiHandlers";
 import { formatFileSize, formatUploadDate } from "./utils/formatters";
 
 // API Base URL - Comment/uncomment as needed
-const API_BASE = 'http://127.0.0.1:8000';  // Local development
-//const API_BASE = 'https://ragtool-backend.onrender.com';  // Render production
+//const API_BASE = 'http://127.0.0.1:8000';  // Local development
+const API_BASE = 'https://ragtool-backend.onrender.com';  // Render production
 
 const CustomerSupportAI = () => {
   // Authentication state
