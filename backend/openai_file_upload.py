@@ -192,127 +192,148 @@ def safe_cleanup_with_retry(file_path, max_retries=3):
             logging.warning(f"Unexpected cleanup error for {file_path}: {e}")
             return
 
-@router.post("/upload-knowledge-file")
-async def upload_knowledge_file(file: UploadFile = File(...)):
+@router.post("/upload")
+async def upload_knowledge_file(files: list[UploadFile] = File(...)):
     """
-    Uploads a file to OpenAI storage and attaches it to the vector store for retrieval using the REST API.
+    Uploads one or more files to OpenAI storage and attaches them to the vector store for retrieval using the REST API.
     Accepts any file type supported by OpenAI (pdf, docx, txt, etc.).
     Checks for duplicates based on filename and size.
     """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+    
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID")
     if not OPENAI_API_KEY or not VECTOR_STORE_ID:
         raise HTTPException(status_code=500, detail="OpenAI API key or Vector Store ID not configured.")
-    try:
-        # Save file temporarily to check size
-        temp_dir = tempfile.gettempdir()
-        temp_path = os.path.join(temp_dir, file.filename)
-        file_content = await file.read()
-        with open(temp_path, "wb") as f_out:
-            f_out.write(file_content)
-        
-        # Get file size
-        file_size = len(file_content)
-        
-        # Check for duplicates
-        duplicate_file = check_duplicate_file(file.filename, file_size)
-        if duplicate_file:
-            safe_cleanup_error(temp_path)
-            return JSONResponse(content={
-                "message": f"File '{file.filename}' already exists in knowledge base (uploaded on {duplicate_file['created_at']}). Upload skipped.",
-                "duplicate": True,
-                "existing_file": duplicate_file
-            })
-        
-        # Check if file is Excel and convert to PDF if needed
-        upload_file_path = temp_path
-        converted_file = False
-        
-        if is_excel_file(file.filename):
-            try:
-                logging.info(f"Converting Excel file {file.filename} to PDF for knowledge base")
-                pdf_path = convert_excel_for_knowledge_base(temp_path, temp_dir)
-                upload_file_path = pdf_path
-                converted_file = True
-                logging.info(f"Successfully converted {file.filename} to PDF")
-                
-                # Give a small delay to ensure file handles are released
-                time.sleep(0.1)
-                
-            except Exception as e:
-                logging.warning(f"Failed to convert Excel to PDF: {e}. Uploading original file.")
-                # Fall back to uploading original Excel file
-                upload_file_path = temp_path
-                converted_file = False
-        
-        # Check for duplicates before upload
-        file_size = os.path.getsize(upload_file_path)
-        duplicate_info = check_duplicate_file(file.filename, file_size)
-        if duplicate_info:
-            raise HTTPException(status_code=400, detail=f"Duplicate file detected: {duplicate_info['filename']} (ID: {duplicate_info['id']})")
-        
-        # 1. Upload file to OpenAI storage
-        url = "https://api.openai.com/v1/files"
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
-        with open(upload_file_path, "rb") as f_in:
-            files = {"file": f_in, "purpose": (None, "assistants")}
-            resp = requests.post(url, headers=headers, files=files)
-        
-        if resp.status_code != 200:
-            # Cleanup before raising exception
-            safe_cleanup_error(temp_path)
-            if converted_file and upload_file_path != temp_path:
-                safe_cleanup_error(upload_file_path)
-            raise HTTPException(status_code=500, detail=f"OpenAI file upload failed: {resp.text}")
-        
-        file_id = resp.json()["id"]
-        
-        # 2. Attach file to vector store
-        url2 = f"https://api.openai.com/v1/vector_stores/{VECTOR_STORE_ID}/files"
-        data = {"file_id": file_id}
-        resp2 = requests.post(url2, headers=headers, json=data)
-        
-        if resp2.status_code != 200:
-            # Cleanup before raising exception
-            safe_cleanup_error(temp_path)
-            if converted_file and upload_file_path != temp_path:
-                safe_cleanup_error(upload_file_path)
-            raise HTTPException(status_code=500, detail=f"OpenAI vector store attach failed: {resp2.text}")
-        
-        # Cleanup temporary files after successful upload
-        safe_cleanup_with_retry(temp_path)
-        if converted_file and upload_file_path != temp_path:
-            safe_cleanup_with_retry(upload_file_path)
-        
-        response_message = "File uploaded and attached to vector store via REST API."
-        if converted_file:
-            response_message += " (Excel file was converted to PDF for better knowledge base compatibility.)"
-        
-        return JSONResponse(content={
-            "message": response_message,
-            "file_id": file_id,
-            "vector_store_id": VECTOR_STORE_ID,
-            "converted_to_pdf": converted_file
-        })
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        # Cleanup on any unexpected error
+    
+    results = []
+    errors = []
+    
+    for file in files:
+        if not file.filename:
+            errors.append(f"Empty filename in uploaded file")
+            continue
+            
         try:
-            if 'temp_path' in locals():
+            # Save file temporarily to check size
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, file.filename)
+            file_content = await file.read()
+            with open(temp_path, "wb") as f_out:
+                f_out.write(file_content)
+            
+            # Get file size
+            file_size = len(file_content)
+            
+            # Check for duplicates
+            duplicate_file = check_duplicate_file(file.filename, file_size)
+            if duplicate_file:
                 safe_cleanup_error(temp_path)
-            if 'upload_file_path' in locals() and upload_file_path != temp_path:
-                safe_cleanup_error(upload_file_path)
-        except:
-            pass
-        
-        logging.error(f"Unexpected error in upload_knowledge_file: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+                results.append({
+                    "filename": file.filename,
+                    "status": "skipped",
+                    "message": f"File '{file.filename}' already exists in knowledge base (uploaded on {duplicate_file['created_at']}). Upload skipped.",
+                    "duplicate": True,
+                    "existing_file": duplicate_file
+                })
+                continue
+            
+            # Check if file is Excel and convert to PDF if needed
+            upload_file_path = temp_path
+            converted_file = False
+            
+            if is_excel_file(file.filename):
+                try:
+                    logging.info(f"Converting Excel file {file.filename} to PDF for knowledge base")
+                    pdf_path = convert_excel_for_knowledge_base(temp_path, temp_dir)
+                    upload_file_path = pdf_path
+                    converted_file = True
+                    logging.info(f"Successfully converted {file.filename} to PDF")
+                    
+                    # Give a small delay to ensure file handles are released
+                    time.sleep(0.1)
+                    
+                except Exception as e:
+                    logging.warning(f"Failed to convert Excel to PDF: {e}. Uploading original file.")
+                    # Fall back to uploading original Excel file
+                    upload_file_path = temp_path
+                    converted_file = False
+            
+            # 1. Upload file to OpenAI storage
+            url = "https://api.openai.com/v1/files"
+            headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+            with open(upload_file_path, "rb") as f_in:
+                files_data = {"file": f_in, "purpose": (None, "assistants")}
+                resp = requests.post(url, headers=headers, files=files_data)
+            
+            if resp.status_code != 200:
+                # Cleanup before continuing to next file
+                safe_cleanup_error(temp_path)
+                if converted_file and upload_file_path != temp_path:
+                    safe_cleanup_error(upload_file_path)
+                errors.append(f"OpenAI file upload failed for {file.filename}: {resp.text}")
+                continue
+            
+            file_id = resp.json()["id"]
+            
+            # 2. Attach file to vector store
+            url2 = f"https://api.openai.com/v1/vector_stores/{VECTOR_STORE_ID}/files"
+            data = {"file_id": file_id}
+            resp2 = requests.post(url2, headers=headers, json=data)
+            
+            if resp2.status_code != 200:
+                # Cleanup before continuing to next file
+                safe_cleanup_error(temp_path)
+                if converted_file and upload_file_path != temp_path:
+                    safe_cleanup_error(upload_file_path)
+                errors.append(f"OpenAI vector store attach failed for {file.filename}: {resp2.text}")
+                continue
+            
+            # Cleanup temporary files after successful upload
+            safe_cleanup_with_retry(temp_path)
+            if converted_file and upload_file_path != temp_path:
+                safe_cleanup_with_retry(upload_file_path)
+            
+            response_message = "File uploaded and attached to vector store via REST API."
+            if converted_file:
+                response_message += " (Excel file was converted to PDF for better knowledge base compatibility.)"
+            
+            results.append({
+                "filename": file.filename,
+                "status": "success",
+                "message": response_message,
+                "file_id": file_id,
+                "vector_store_id": VECTOR_STORE_ID,
+                "converted_to_pdf": converted_file
+            })
+            
+        except Exception as e:
+            # Cleanup on any unexpected error
+            try:
+                if 'temp_path' in locals():
+                    safe_cleanup_error(temp_path)
+                if 'upload_file_path' in locals() and upload_file_path != temp_path:
+                    safe_cleanup_error(upload_file_path)
+            except:
+                pass
+            
+            logging.error(f"Unexpected error uploading {file.filename}: {str(e)}", exc_info=True)
+            errors.append(f"Upload failed for {file.filename}: {str(e)}")
+    
+    # Return summary of results
+    if len(results) == 0 and len(errors) > 0:
+        raise HTTPException(status_code=500, detail=f"All uploads failed: {'; '.join(errors)}")
+    
+    return JSONResponse(content={
+        "message": f"Processed {len(files)} files. {len(results)} successful, {len(errors)} failed.",
+        "results": results,
+        "errors": errors,
+        "success_count": len(results),
+        "error_count": len(errors)
+    })
 
-@router.post("/upload-website-content")
+@router.post("/scan-website")
 async def upload_website_content(payload: dict):
     """
     Crawls up to `max_pages` from the given URL's domain, aggregates main text, and uploads to OpenAI vector store.
@@ -420,7 +441,7 @@ async def upload_website_content(payload: dict):
         logging.error(f"Website upload failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Website upload failed: {str(e)}")
 
-@router.get("/knowledge-files")
+@router.get("/files")
 async def get_knowledge_files():
     """
     Returns a list of all files currently in the knowledge base vector store.
@@ -437,7 +458,7 @@ async def get_knowledge_files():
         logging.error(f"Failed to get knowledge files: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get knowledge files: {str(e)}")
 
-@router.delete("/knowledge-files/{file_id}")
+@router.delete("/files/{file_id}")
 async def delete_knowledge_file(file_id: str):
     """
     Deletes a file from the knowledge base vector store.

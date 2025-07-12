@@ -13,7 +13,7 @@ const KnowledgeFileList = ({
   formatUploadDate
 }) => {
   return (
-    <div className="mt-8">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-800">Uploaded Knowledge Files</h3>
         <div className="flex items-center gap-3">

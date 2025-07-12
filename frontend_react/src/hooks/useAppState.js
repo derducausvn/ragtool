@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 const useAppState = () => {
   // Page and UI states
-  const [currentPage, setCurrentPage] = useState('chat');
+  const [currentPage, setCurrentPage] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [menuOpenId, setMenuOpenId] = useState(null);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageCircle, FileText, Upload } from 'lucide-react';
+import { Home, MessageCircle, FileText, Upload } from 'lucide-react';
 
 const NavigationMenu = ({
   currentPage,
@@ -8,6 +8,7 @@ const NavigationMenu = ({
   isScanning
 }) => {
   const menuItems = [
+    { id: 'dashboard', icon: Home, label: 'Dashboard' },
     { id: 'chat', icon: MessageCircle, label: 'Chat & Ask' },
     { id: 'questionnaire', icon: FileText, label: 'Customer Questionnaires' },
     { id: 'knowledge', icon: Upload, label: 'Knowledge Base' }

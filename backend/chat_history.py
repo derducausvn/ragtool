@@ -13,7 +13,7 @@ from db import get_session, engine
 router = APIRouter()
 
 # --- API: Create new session from full payload ---
-@router.post("/chat/save")
+@router.post("/save")
 def save_chat(payload: dict, session=Depends(get_session)):
     messages = payload.get("messages", [])
     if not messages:
@@ -36,13 +36,13 @@ def save_chat(payload: dict, session=Depends(get_session)):
     return {"success": True, "session_id": new_chat.id}
 
 # --- API: Return list of past sessions ---
-@router.get("/chat/history")
+@router.get("/history")
 def chat_history(session=Depends(get_session)):
     sessions = session.exec(select(ChatSession).order_by(ChatSession.created_at.desc())).all()
     return {"history": [{"id": s.id, "title": s.title} for s in sessions]}
 
 # --- API: Create new empty session ---
-@router.post("/chat/new")
+@router.post("/new")
 def new_chat(payload: dict = {}, session=Depends(get_session)):
     title = payload.get("title", "Untitled Chat")
     chat = ChatSession(title=title)
@@ -51,8 +51,14 @@ def new_chat(payload: dict = {}, session=Depends(get_session)):
     session.refresh(chat)
     return {"session_id": chat.id}
 
+# --- API: Get chat history for specific session ---
+@router.get("/{session_id}")
+def get_full_chat(session_id: int):
+    """Get chat history for specific session"""
+    return {"history": get_chat_history(session_id)}
+
 # --- API: Rename chat session ---
-@router.post("/chat/{session_id}/rename")
+@router.post("/{session_id}/rename")
 def rename_chat(session_id: int, new_title: str, session=Depends(get_session)):
     chat = session.get(ChatSession, session_id)
     if not chat:
@@ -63,7 +69,7 @@ def rename_chat(session_id: int, new_title: str, session=Depends(get_session)):
     return {"success": True}
 
 # --- API: Delete session and messages ---
-@router.delete("/chat/{session_id}")
+@router.delete("/{session_id}")
 def delete_chat(session_id: int, session=Depends(get_session)):
     chat = session.get(ChatSession, session_id)
     if not chat:

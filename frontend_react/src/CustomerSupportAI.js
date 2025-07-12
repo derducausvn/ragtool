@@ -3,6 +3,7 @@ import DeleteConfirmModal from "./components/DeleteConfirmModal";
 import SidebarHeader from "./components/SidebarHeader";
 import NavigationMenu from "./components/NavigationMenu";
 import AppSidebar from "./components/AppSidebar";
+import DashboardPage from "./components/DashboardPage";
 import { ChatPage, QuestionnairePage, KnowledgePage } from "./components/PageComponents";
 import useKnowledgeFileManager from "./hooks/useKnowledgeFileManager";
 import useAppState from "./hooks/useAppState";
@@ -10,8 +11,8 @@ import useApiHandlers from "./hooks/useApiHandlers";
 import { formatFileSize, formatUploadDate } from "./utils/formatters";
 
 // API Base URL - Comment/uncomment as needed
-//const API_BASE = 'http://127.0.0.1:8000';  // Local development
-const API_BASE = 'https://ragtool-backend.onrender.com';  // Render production
+const API_BASE = 'http://127.0.0.1:8000';  // Local development
+//const API_BASE = 'https://ragtool-backend.onrender.com';  // Render production
 
 const CustomerSupportAI = () => {
   // Use custom hooks for state management
@@ -48,7 +49,7 @@ const CustomerSupportAI = () => {
   };
 
   useEffect(() => {
-    // Fetch chat history on mount
+    // Fetch chat history on mount - using correct endpoint
     fetch(`${API_BASE}/chat/history`)
       .then(res => res.json())
       .then(data => {
@@ -56,10 +57,11 @@ const CustomerSupportAI = () => {
       })
       .catch(err => console.error("Failed to fetch chat history:", err));
 
-    // Fetch questionnaire history
-    fetch(`${API_BASE}/questionnaire/history`)
+    // Fetch questionnaire history - using correct endpoint
+    fetch(`${API_BASE}/questionnaires/history`)
       .then(res => res.json())
-      .then(data => state.setQuestionnaireList(data.history || []));
+      .then(data => state.setQuestionnaireList(data.history || []))
+      .catch(err => console.error("Failed to fetch questionnaire history:", err));
 
     // Fetch knowledge base files when on knowledge page
     if (state.currentPage === 'knowledge') {
@@ -73,7 +75,8 @@ const CustomerSupportAI = () => {
         !event.target.closest('.dropdown-trigger')
       ) {
         state.setMenuOpenId(null);
-      }};
+      }
+    };
 
     document.addEventListener("mousedown", handleClickOutside);
 
@@ -170,6 +173,12 @@ const CustomerSupportAI = () => {
     }
   }, [state.chatHistory, state.isLoading]);
     
+  // Auto-collapse history lists when switching pages
+  useEffect(() => {
+    state.setShowAllChats(false);
+    state.setShowAllQuestionnaires(false);
+  }, [state.currentPage]);
+
   return (
     <div className="flex min-h-screen bg-[#f5f7fa] font-sans">
       {/* Delete Confirmation Modal */}
@@ -240,6 +249,16 @@ const CustomerSupportAI = () => {
 
       {/* Main content */}
       <div className="flex-1 p-6">
+        {/* Dashboard Page */}
+        {state.currentPage === 'dashboard' && (
+          <DashboardPage 
+            setCurrentPage={state.setCurrentPage}
+            chatList={state.chatList}
+            questionnaireList={state.questionnaireList}
+            uploadedKnowledgeFiles={state.uploadedKnowledgeFiles}
+          />
+        )}
+
         {/* Chat & Ask Page */}
         {state.currentPage === 'chat' && (
           <ChatPage 

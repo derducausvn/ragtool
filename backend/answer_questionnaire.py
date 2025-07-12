@@ -22,7 +22,7 @@ router = APIRouter()
 
 SUPPORTED_FORMATS = {"xlsx", "pdf", "docx"}
 
-@router.post("/answer-questionnaire")
+@router.post("/process")
 async def answer_questionnaire(file: UploadFile = File(...)):
     """
     Accepts a file upload (Q&A Excel or document), extracts questions,

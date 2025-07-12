@@ -9,7 +9,7 @@ const KnowledgeFileUpload = ({
   onFileSubmit
 }) => {
   return (
-    <div className="mb-8">
+    <div>
       <h3 className="text-lg font-semibold text-gray-800 mb-3">Document Upload</h3>
       <div className="border-2 border-dashed border-gray-300 rounded-xl p-6">
         <Upload className="mx-auto w-10 h-10 text-gray-400 mb-2" />

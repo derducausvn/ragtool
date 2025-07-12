@@ -226,10 +226,14 @@ const KnowledgePage = ({
 }) => {
   return (
     <div className="space-y-6">
+      {/* Page Header */}
       <div className="bg-white p-6 rounded-xl shadow-md">
         <h2 className="text-2xl font-bold text-[#00B4F1] mb-4">Knowledge Base Management</h2>
         <p className="text-gray-400 text-sm mb-6">Upload documents or scan websites to add to the Knowledge Base for F24 QA Mode and Bulk Answering.</p>
-        
+      </div>
+
+      {/* Document Upload Section */}
+      <div className="bg-white p-6 rounded-xl shadow-md">
         <KnowledgeFileUpload
           knowledgeFiles={knowledgeFiles}
           isUploadingKnowledge={isUploadingKnowledge}
@@ -237,7 +241,10 @@ const KnowledgePage = ({
           onFileUpload={handleKnowledgeFileUpload}
           onFileSubmit={handleKnowledgeFileSubmit}
         />
+      </div>
 
+      {/* Website Scanner Section */}
+      <div className="bg-white p-6 rounded-xl shadow-md">
         <WebsiteScanner
           websiteUrl={websiteUrl}
           setWebsiteUrl={setWebsiteUrl}
@@ -248,7 +255,10 @@ const KnowledgePage = ({
           crawlProgress={crawlProgress}
           onWebsiteScan={handleWebsiteScan}
         />
+      </div>
 
+      {/* Uploaded Files List Section */}
+      <div className="bg-white p-6 rounded-xl shadow-md">
         <KnowledgeFileList
           uploadedKnowledgeFiles={uploadedKnowledgeFiles}
           showUploadedFiles={showUploadedFiles}
